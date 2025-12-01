@@ -1,0 +1,93 @@
+{
+  "mcpServers": {
+    "sequential-thinking-mcp": {
+      "type": "stdio",
+      "command": "mcp-server-sequential-thinking",
+      "args": [],
+      "env": {}
+    },
+    "everything-mcp": {
+      "type": "stdio",
+      "command": "C:/mcp-servers/everything-mcp/index.js",
+      "args": [],
+      "env": {}
+    },
+    "fermat-mcp": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "--directory",
+        "C:/mcp-servers/fermat-mcp",
+        "run",
+        "server.py"
+      ],
+      "env": {}
+    },
+    "math-mcp": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "c:/mcp-servers/math-mcp/dist/index-wasm.js"
+      ],
+      "env": {}
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "playwright-mcp",
+      "args": [],
+      "env": {}
+    },
+    "substack-mcp": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "C:/mcp-servers/substack-mcp/dist/mcp-server.js"
+      ],
+      "env": {}
+    },
+    "time": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "-m",
+        "mcp_server_time"
+      ],
+      "env": {}
+    },
+    "memory-mcp": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "c:/mcp-servers/memory-mcp/src/memory/dist/index.js"
+      ],
+      "env": {}
+    },
+    "fzf-mcp": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "c:/mcp-servers/fzf-mcp/index.js"
+      ],
+      "env": {}
+    },
+    "deepthinking-mcp": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "c:/mcp-servers/deepthinking-mcp/dist/index.js"
+      ],
+      "env": {}
+    },
+    "windows-mcp": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "--directory",
+        "C:/mcp-servers/Windows-MCP",
+        "run",
+        "main.py"
+      ],
+      "env": {}
+    }
+  }
+}
