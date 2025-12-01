@@ -1,0 +1,36 @@
+[project]
+name = "windows-mcp"
+version = "0.1.0"
+description = "Lightweight MCP Server for interacting with Windows Operating System."
+authors = [
+    { name = "Jeomon George", email = "jeogeoalukka@gmail.com" }
+]
+readme = "README.md"
+license = { file = "LICENSE" }
+urls = { homepage = "https://github.com/CursorTouch" }
+keywords = ["windows", "mcp", "ai", "desktop","ai agent"]
+requires-python = ">=3.13"
+dependencies = [
+    "fastmcp>=2.8.1",
+    "fuzzywuzzy>=0.18.0",
+    "humancursor>=1.1.5",
+    "live-inspect>=0.1.1",
+    "markdownify>=1.1.0",
+    "pillow>=11.2.1",
+    "pyautogui>=0.9.54",
+    "python-levenshtein>=0.27.1",
+    "requests>=2.32.3",
+    "uiautomation>=2.0.24",
+    "pyperclip>=1.8.2",
+]
+
+[project.scripts]
+windows-mcp = "__main__:main"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["src", "src.desktop", "src.tree"]
+py-modules = ["main"]
