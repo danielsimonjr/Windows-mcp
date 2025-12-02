@@ -48,14 +48,14 @@ def powershell_tool(command: str) -> str:
     return f'Status Code: {status}\nResponse: {response}'
 
 @mcp.tool(name='State-Tool',description='Capture comprehensive desktop state including focused/opened applications, interactive UI elements (buttons, text fields, menus), informative content (text, labels, status), and scrollable areas. Optionally includes visual screenshot when use_vision=True. Essential for understanding current desktop context and available UI interactions.')
-def state_tool(use_vision:bool=False)->str:
+def state_tool(use_vision:bool=False):
     desktop_state=desktop.get_state(use_vision=use_vision)
     interactive_elements=desktop_state.tree_state.interactive_elements_to_string()
     informative_elements=desktop_state.tree_state.informative_elements_to_string()
     scrollable_elements=desktop_state.tree_state.scrollable_elements_to_string()
     apps=desktop_state.apps_to_string()
     active_app=desktop_state.active_app_to_string()
-    return [dedent(f'''
+    state_text=dedent(f'''
     Focused App:
     {active_app}
 
@@ -70,7 +70,10 @@ def state_tool(use_vision:bool=False)->str:
 
     List of Scrollable Elements:
     {scrollable_elements or 'No scrollable elements found.'}
-    ''')]+([Image(data=desktop_state.screenshot,format='png')] if use_vision else [])
+    ''')
+    if use_vision:
+        return [state_text, Image(data=desktop_state.screenshot,format='png')]
+    return state_text
     
 @mcp.tool(name='Clipboard-Tool',description='Copy text to clipboard or retrieve current clipboard content. Use "copy" mode with text parameter to copy, "paste" mode to retrieve.')
 def clipboard_tool(mode: Literal['copy', 'paste'], text: str = None)->str:
