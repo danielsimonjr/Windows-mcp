@@ -6,14 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Windows-MCP is a lightweight, open-source MCP (Model Context Protocol) server that enables AI agents to interact directly with the Windows operating system. It provides tools for UI automation, desktop interaction, application control, and system operations through a11y (accessibility) tree traversal.
 
-**Version**: 0.1.0 | **Platform**: Windows 7-11 only | **Python**: 3.13+ | **Entry Point**: `main.py`
+**Version**: 0.1.3 | **Platform**: Windows 7-11 only | **Python**: 3.13+ | **Entry Point**: `main.py`
 
 ## Project Structure
 
 ```
 Windows-MCP/
 ├── main.py              # MCP server entry point with 14 tool definitions
-├── __main__.py          # Package entry point for pip installation
+├── windows_mcp_entry.py # Console script entry point (pip install creates windows-mcp command)
+├── __main__.py          # Package entry point for python -m windows_mcp
 ├── src/
 │   ├── desktop/         # Desktop state management and app control
 │   │   ├── __init__.py  # Desktop class - core Windows interaction layer
@@ -24,6 +25,12 @@ Windows-MCP/
 │       ├── config.py    # UI element type configuration (INTERACTIVE_CONTROL_TYPE_NAMES, etc.)
 │       ├── views.py     # Tree data models (TreeElementNode, TextElementNode, ScrollElementNode)
 │       └── utils.py     # Geometry utilities for bounding box operations
+├── docs/
+│   └── architecture/    # Architecture documentation
+│       ├── OVERVIEW.md      # High-level architecture overview
+│       ├── ARCHITECTURE.md  # Detailed architecture documentation
+│       ├── COMPONENTS.md    # Component specifications
+│       └── DATAFLOW.md      # Data flow diagrams and explanations
 ├── pyproject.toml       # Package configuration and dependencies
 ├── manifest.json        # DXT (Desktop Extension) metadata
 ├── dist/                # Built wheel and source distributions
@@ -83,15 +90,18 @@ pip install build
 # Build wheel and source distribution
 python -m build
 
-# Output: dist/windows_mcp-0.1.0-py3-none-any.whl
-#         dist/windows_mcp-0.1.0.tar.gz
+# Output: dist/windows_mcp_server-<version>-py3-none-any.whl
+#         dist/windows_mcp_server-<version>.tar.gz
 ```
 
 ### Installation Methods
 
 ```bash
-# Install from wheel (fastest, recommended)
-pip install dist/windows_mcp-0.1.0-py3-none-any.whl
+# Install from PyPI (recommended)
+pip install windows-mcp-server
+
+# Install from local wheel
+pip install dist/windows_mcp_server-0.1.3-py3-none-any.whl
 
 # Editable install for development
 pip install -e .
@@ -207,8 +217,7 @@ Add to `%USERPROFILE%\.gemini\settings.json`:
 The server exposes 14 tools for Windows interaction:
 
 **Desktop State**
-- `State-Tool`: Capture desktop state (apps, UI elements, optional screenshot)
-- `Screenshot-Tool`: Take desktop screenshot
+- `State-Tool`: Capture desktop state (apps, UI elements, optional screenshot). Returns `str` when `use_vision=False`, returns `list[str, Image]` when `use_vision=True`
 
 **Application Control**
 - `Launch-Tool`: Launch apps from Start Menu by name
@@ -276,7 +285,6 @@ Elements must meet all criteria to be considered interactive:
 - `pyperclip>=1.8.2` - Clipboard operations
 - `markdownify>=1.1.0` - HTML to markdown conversion
 - `requests>=2.32.3` - HTTP requests for web scraping
-- `live-inspect>=0.1.1` - Runtime inspection
 
 **Note**: `pythonnet` (indirect dependency) has compatibility issues with Python 3.14+. Use Python 3.13 for best results.
 
@@ -396,8 +404,10 @@ For distributing the package:
 
 - **CLI execution**: `python main.py`
 - **Package module**: `python -m windows_mcp` (after pip install)
-- **Console script**: `windows-mcp` (after pip install)
+- **Console script**: `windows-mcp` (after pip install, via `windows_mcp_entry.py`)
 - **Source entry**: `main.py` (FastMCP server with tool definitions)
+
+**Note on Entry Points (v0.1.2 fix)**: The console script uses `windows_mcp_entry.py` instead of `__main__.py` because using `__main__:main` as the entry point causes an ImportError when pip creates the console script. The dedicated entry module imports `mcp` from `main.py` and calls `mcp.run()`.
 
 ## Memory Usage Reminder
 
@@ -413,4 +423,25 @@ For distributing the package:
    - Record unfinished tasks or blockers
    - Note user preferences or patterns observed
 
-**Entity**: "Windows MCP" (importance: 10, tags: mcp, windows, automation, python, fastmcp, active-project)
+**Entity**: "Windows MCP" (importance: 10, tags: mcp, windows, automation, python, fastmcp, active-project, pypi, ui-automation)
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 0.1.3 | 2025-12-02 | Fix State-Tool return type (returns string, not list) when use_vision=False |
+| 0.1.2 | 2025-12-02 | Fix ImportError in console script entry point (created windows_mcp_entry.py) |
+| 0.1.1 | 2025-12-01 | Remove live-inspect dependency |
+| 0.1.0 | 2025-11-30 | Initial PyPI release as windows-mcp-server |
+
+## PyPI Publication
+
+**Package Name**: `windows-mcp-server` (not `windows-mcp` due to namespace conflict)
+**Console Command**: `windows-mcp`
+**PyPI URL**: https://pypi.org/project/windows-mcp-server/
+
+```bash
+# Publish new version to PyPI
+python -m build
+python -m twine upload dist/windows_mcp_server-<version>*
+```
