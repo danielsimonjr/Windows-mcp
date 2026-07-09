@@ -1,0 +1,39 @@
+version: 2
+updates:
+  # Grouped so a bump wave arrives as ONE PR per ecosystem (not N conflicting ones).
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      nuget:
+        patterns: ["*"]
+    commit-message:
+      prefix: chore
+    labels: [dependencies, dotnet]
+
+  # Node dev utilities under tools/ (create-dependency-graph, chunking, compress).
+  - package-ecosystem: npm
+    directories:
+      - /tools/chunking-for-files
+      - /tools/compress-for-context
+      - /tools/create-dependency-graph
+    schedule:
+      interval: weekly
+    groups:
+      npm:
+        patterns: ["*"]
+    commit-message:
+      prefix: chore
+    labels: [dependencies, javascript]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
+    labels: [dependencies, github-actions]

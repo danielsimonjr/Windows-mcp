@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # net9.0-windows target (Win10 SDK) requires a Windows runner.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          global-json-file: global.json
+      # Build the solution explicitly (not the directory) so the Python `legacy/`
+      # tree is never part of the build graph.
+      - run: dotnet restore Windows-mcp.sln
+      - run: dotnet build Windows-mcp.sln --no-restore -c Release
+      # Exclude the UIAutomation category — those tests need an interactive desktop
+      # (foreground app / screen capture) that a hosted runner's service session lacks.
+      # This is the repo's documented headless-safe subset.
+      - run: dotnet test Windows-mcp.sln --no-build -c Release --filter "Category!=UIAutomation" --verbosity normal

@@ -5,7 +5,13 @@ using Xunit;
 
 namespace WindowsMcp.Tests.Services;
 
-[Trait("Category", "Integration")]
+// CaptureAsync calls Graphics.CopyFromScreen, which requires an interactive desktop
+// session — it throws Win32Exception "The handle is invalid" under headless/service
+// sessions (local non-interactive runs and GitHub-hosted Windows runners alike). That
+// is the same constraint as the UIAutomation bucket, so it is categorized here to be
+// excluded by the documented headless-safe filter (Category!=UIAutomation), not left
+// mislabeled as read-only Integration.
+[Trait("Category", "UIAutomation")]
 public class ScreenshotServiceTests
 {
     [Fact]
