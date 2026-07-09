@@ -53,8 +53,11 @@ jobs:
           NUMBER: ${{ steps.pr.outputs.number }}
         run: |
           set -euo pipefail
+          # Include previous_filename too: on a rename the Files API returns
+          # only the DESTINATION filename, so a rename-only diff would dodge
+          # the src/ capability guard unless the source path is also checked.
           gh api "repos/${{ github.repository }}/pulls/$NUMBER/files" --paginate \
-            --jq '.[].filename' > changed.txt
+            --jq '.[].filename, (.[]|select(.previous_filename)|.previous_filename)' > changed.txt
           added=$(gh api "repos/${{ github.repository }}/pulls/$NUMBER" --jq '.additions')
           if bash .github/scripts/claude-guard.sh changed.txt "$added" > verdict.txt 2>verdict.stderr.log; then
             echo "conclusion=success" >> "$GITHUB_OUTPUT"
@@ -79,6 +82,7 @@ jobs:
 
       - name: Publish check-run (not applicable)
         if: steps.pr.outputs.act == 'notapplicable'
+        id: post_na
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ steps.pr.outputs.sha }}
@@ -91,9 +95,11 @@ jobs:
             -f conclusion='success' \
             -f 'output[title]=claude-guard: not applicable' \
             -f 'output[summary]=not a claude-bot PR — guard not applicable'
+          echo "posted=true" >> "$GITHUB_OUTPUT"
 
       - name: Publish check-run (evaluated)
         if: steps.pr.outputs.act == 'run'
+        id: post_eval
         env:
           GH_TOKEN: ${{ github.token }}
           SUMMARY: ${{ steps.guard.outputs.summary }}
@@ -108,6 +114,20 @@ jobs:
             -f conclusion="$CONCLUSION" \
             -f "output[title]=claude-guard: $CONCLUSION" \
             -f "output[summary]=$SUMMARY"
+          echo "posted=true" >> "$GITHUB_OUTPUT"
+
+      - name: Fail closed if no check-run was posted
+        if: always() && steps.pr.outputs.act != 'skip' && steps.post_eval.outputs.posted != 'true' && steps.post_na.outputs.posted != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.pr.outputs.sha }}
+        run: |
+          set -euo pipefail
+          gh api -X POST "repos/$GITHUB_REPOSITORY/check-runs" \
+            -f name='claude-guard' -f head_sha="$SHA" -f status='completed' \
+            -f conclusion='failure' \
+            -f 'output[title]=claude-guard: workflow error' \
+            -f 'output[summary]=The claude-guard workflow errored before evaluating this PR. Failing closed — a maintainer must review.'
 
       - name: Comment on block
         if: steps.pr.outputs.act == 'run' && steps.guard.outputs.conclusion == 'failure'

@@ -22,6 +22,11 @@ if [ "${#files[@]}" -eq 0 ]; then
   echo "BLOCK:"; echo "  - no changed files detected (nothing to verify)"; exit 1
 fi
 for f in "${files[@]}"; do
+  if [[ "$f" == *..* ]]; then
+    reasons+=("traversal: '$f' contains '..' (default-deny)"); verdict=1
+  fi
+done
+for f in "${files[@]}"; do
   if [[ "$f" =~ $CAPABILITY_REGEX ]]; then
     reasons+=("capability: '$f' is a high-risk source (human-only)"); verdict=1
   fi

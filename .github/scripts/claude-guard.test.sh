@@ -23,5 +23,6 @@ run "legacy blocked"          1 "legacy/foo.py"
 run "empty diff blocked"      1 ""
 run "too many files blocked"  1 "$(for i in $(seq 1 25); do echo "docs/f$i.md"; done)" 0
 run "too many lines blocked"  1 "docs/a.md" 999
+run "traversal blocked"       1 "docs/../src/Evil.cs"
 echo "---"; echo "pass=$pass fail=$fail"
 [ "$fail" -eq 0 ]
