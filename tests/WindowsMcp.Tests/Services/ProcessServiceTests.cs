@@ -118,7 +118,12 @@ public class ProcessServiceTests
     public async Task KillGuardedAsync_aborts_on_start_time_mismatch()
     {
         var svc = Make(new WmiService());
-        var pid = await svc.StartDetachedAsync("\"C:\\Windows\\System32\\cmd.exe\" /c pause");
+        // The guard must see a LIVE process to compare start times. `cmd /c pause`
+        // blocks only with an interactive console — on a headless/service session
+        // (CI runners) it hits EOF on stdin and exits immediately, so the process
+        // is already gone when KillGuardedAsync runs. `ping -n 60` blocks ~59 s
+        // independently of any console, keeping the process reliably alive.
+        var pid = await svc.StartDetachedAsync("\"C:\\Windows\\System32\\cmd.exe\" /c ping -n 60 127.0.0.1");
         try
         {
             var act = () => svc.KillGuardedAsync(pid, new System.DateTime(2000, 1, 1, 0, 0, 0, System.DateTimeKind.Utc));
