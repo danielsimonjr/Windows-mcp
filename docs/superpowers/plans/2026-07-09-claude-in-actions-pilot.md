@@ -15,7 +15,7 @@
 - Capability guard (human-only, always): any `src/**` path — the whole product is high-risk (PowerShell, registry, input injection, screen capture) and the required test gate excludes UIAutomation/clipboard/PowerShell.
 - Guard must be defined on `main`, never the PR's copy (use `workflow_run`, not `pull_request`).
 - Dedicated `claude-bot` GitHub App: permissions `contents:write` + `pull_requests:write` ONLY (no `workflows`, `packages`, `administration`); installed only on this repo; not on any branch-protection bypass list.
-- `CLAUDE_CODE_OAUTH_TOKEN` belongs to a DEDICATED automation account (not Daniel's personal identity); stored in a GitHub Environment named `claude-bot` with required reviewers; exposed only to the Claude step.
+- `ANTHROPIC_API_KEY` (an `sk-ant-…` service credential — dedicated CI key recommended, with a Console spend limit as the cost cap) is stored as a GitHub secret and exposed only to the Claude step. It replaces the subscription OAuth token (service credential, metered, doesn't starve the interactive Claude quota).
 - All third-party actions pinned to a commit SHA. Least-privilege `permissions:` per workflow.
 - Never touch `legacy/**`; build/test only via the `.sln` (existing CI pattern).
 - One concern per PR: caps `MAX_FILES=20`, `MAX_LINES=400`.
@@ -36,15 +36,15 @@ Create `docs/superpowers/plans/claude-bot-setup-checklist.md`:
 ```markdown
 # claude-bot provisioning checklist (Daniel only)
 
-- [ ] Create a dedicated automation GitHub account (e.g. `danielsimonjr-bot`) with its own Claude subscription.
-- [ ] On that account run `claude setup-token`; copy the `CLAUDE_CODE_OAUTH_TOKEN`.
+- [ ] Obtain an `ANTHROPIC_API_KEY` (`sk-ant-…`; dedicated CI key with a Console spend limit recommended — that limit is the cost cap). Replaces the subscription OAuth token: a service credential, metered, and won't starve the interactive Claude quota.
+- [ ] Add it: `gh secret set ANTHROPIC_API_KEY --repo danielsimonjr/Windows-mcp`.
 - [ ] Register a GitHub App named `claude-bot`:
       - Repository permissions: Contents = Read and write; Pull requests = Read and write. Nothing else.
       - Subscribe to no events. Where can it be installed: Only on this account.
 - [ ] Install the `claude-bot` App on `danielsimonjr/Windows-mcp` ONLY.
 - [ ] Record the App ID and generate a private key (.pem).
 - [ ] In repo Settings → Environments, create environment `claude-bot` with "Required reviewers" = danielsimonjr.
-- [ ] Add repo secrets: `CLAUDE_CODE_OAUTH_TOKEN` (Environment `claude-bot`), `CLAUDE_BOT_APP_ID` (repo), `CLAUDE_BOT_APP_PRIVATE_KEY` (repo).
+- [ ] Add repo secrets: `CLAUDE_BOT_APP_ID` (repo), `CLAUDE_BOT_APP_PRIVATE_KEY` (repo). (`ANTHROPIC_API_KEY` added above.)
 - [ ] Add repo secret `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` for the digest (from the existing telegram bot).
 - [ ] Confirm the App's bot login slug (usually `claude-bot[bot]`): after the first PR, `gh pr view <n> --json author` shows `.author.login`. Put the exact value in `.github/claude-guard.env` (Task 2).
 - [ ] Confirm `claude-bot` is NOT listed under Settings → Branches → branch protection "Allow specified actors to bypass".
@@ -334,7 +334,7 @@ Note: `required_approving_review_count:0` keeps Daniel's own non-Claude PRs fric
 - Create: `.github/workflows/claude-maintenance.yml`
 
 **Interfaces:**
-- Consumes: secrets `CLAUDE_CODE_OAUTH_TOKEN` (env `claude-bot`), `CLAUDE_BOT_APP_ID`, `CLAUDE_BOT_APP_PRIVATE_KEY`; the guard (Task 2) validates its output.
+- Consumes: secrets `ANTHROPIC_API_KEY`, `CLAUDE_BOT_APP_ID`, `CLAUDE_BOT_APP_PRIVATE_KEY`; the guard (Task 2) validates its output.
 - Produces: a PR on branch `claude/maint-docs-<run_id>`, labelled `claude-maintenance`.
 
 - [ ] **Step 1: Resolve the action SHA**
@@ -357,7 +357,7 @@ concurrency:
 jobs:
   doc-drift:
     runs-on: ubuntu-latest
-    environment: claude-bot   # required-reviewer gate exposes the OAuth token here only
+    environment: claude-bot   # optional: scope ANTHROPIC_API_KEY to this Environment; else use a repo secret and drop this line
     steps:
       - name: Mint claude-bot App token
         id: app
@@ -383,7 +383,7 @@ jobs:
         if: steps.idem.outputs.skip != 'true'
         uses: anthropics/claude-code-action@<ACTION_SHA> # v1.x — SHA-pinned
         env:
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GITHUB_TOKEN: ${{ steps.app.outputs.token }}
         with:

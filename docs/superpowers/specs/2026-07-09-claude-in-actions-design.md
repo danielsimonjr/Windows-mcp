@@ -46,15 +46,21 @@ allowlist-guarded, time-delayed) — never for arbitrary diffs, and never for de
 
 ## Prerequisites (Daniel only — implementation is blocked until these exist)
 
-1. A **dedicated automation account** (not Daniel's personal identity) with a Claude subscription;
-   generate `CLAUDE_CODE_OAUTH_TOKEN` via `claude setup-token`. A dedicated account prevents a bot
-   loop from starving Daniel's interactive quota.
+1. An **`ANTHROPIC_API_KEY`** (an `sk-ant-…` API key), stored as a GitHub secret. This replaces the
+   originally-planned subscription OAuth token: an API key is a proper *service* credential (not
+   Daniel's personal identity — fixes the personal-identity blast-radius finding), is metered and
+   separate from his interactive Claude subscription (fixes the quota-starvation finding), and a
+   **Console spend limit on the key is the hard cost cap**. Prefer a **dedicated CI key** minted in
+   the Anthropic Console (so a CI leak can't expose or break the local RLM key and can be revoked
+   independently); reusing the existing `~/.claude/api_key.txt` works to bootstrap but couples CI +
+   RLM blast radius. The official `anthropics/claude-code-action` takes this as its preferred auth.
 2. A **dedicated `claude-bot` GitHub App**, installed ONLY on Windows-mcp, with permissions
    `contents: write` + `pull_requests: write` and NOTHING else (no `workflows`, `packages`,
-   `administration`); not on any branch-protection bypass list.
-3. Store the OAuth token in a GitHub **Environment with required reviewers**, exposed only to the
-   Claude step. Resolve `anthropics/claude-code-action@v1` to a commit SHA and pin it + its
-   transitive actions.
+   `administration`); not on any branch-protection bypass list. (Still required so the bot's PR is
+   authored by a bot identity and its push triggers CI → the guard.)
+3. Store `ANTHROPIC_API_KEY` as a repo secret (optionally scope it to a GitHub **Environment** for
+   the pilot); expose it only to the Claude step. Resolve `anthropics/claude-code-action@v1` to a
+   commit SHA and pin it + its transitive actions.
 
 ## Pilot component: Stage-1 documentation-drift bot
 
@@ -111,8 +117,8 @@ above; and a workflow-enforced attempt limiter (give up after 2 bot commits on a
 1. The doc-drift bot opens a correct, allowlist-clean PR; Daniel merges it; no duplicate next run.
 2. The `main`-defined allowlist check demonstrably BLOCKS a PR that touches a non-doc path, and the
    capability guard blocks a PR touching a high-risk tool source.
-3. The OAuth token stays confined to the reviewer-gated Environment step; no secret exposure in
-   logs/comments; cost stays under the monthly cap; Daniel's interactive quota is never starved.
+3. `ANTHROPIC_API_KEY` stays confined to the Claude step; no secret exposure in logs/comments; API
+   spend stays under the Console spend limit; Daniel's interactive Claude subscription is untouched.
 
 Only after all three hold: add the weekly cron, then consider narrow earned auto-merge for
 doc-only PRs, then begin the Phase-2b fix-bot design, then widen to a second repo.
