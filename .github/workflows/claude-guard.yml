@@ -120,7 +120,10 @@ jobs:
         if: always() && steps.pr.outputs.act != 'skip' && steps.post_eval.outputs.posted != 'true' && steps.post_na.outputs.posted != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          SHA: ${{ steps.pr.outputs.sha }}
+          # Source the SHA from the event payload (always present) rather than a
+          # derived step output, so fail-closed still posts even if "Resolve PR"
+          # itself errored before emitting steps.pr.outputs.sha.
+          SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
           gh api -X POST "repos/$GITHUB_REPOSITORY/check-runs" \
