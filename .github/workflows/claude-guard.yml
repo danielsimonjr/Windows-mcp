@@ -56,27 +56,37 @@ jobs:
           gh api "repos/${{ github.repository }}/pulls/$NUMBER/files" --paginate \
             --jq '.[].filename' > changed.txt
           added=$(gh api "repos/${{ github.repository }}/pulls/$NUMBER" --jq '.additions')
-          if bash .github/scripts/claude-guard.sh changed.txt "$added" > verdict.txt 2>&1; then
+          if bash .github/scripts/claude-guard.sh changed.txt "$added" > verdict.txt 2>verdict.stderr.log; then
             echo "conclusion=success" >> "$GITHUB_OUTPUT"
           else
             echo "conclusion=failure" >> "$GITHUB_OUTPUT"
           fi
-          # Sanitize verdict text (derived from untrusted PR diff content) before it
-          # is ever echoed elsewhere, so it cannot inject further workflow commands.
-          { echo "::stop-commands::guardblock"; cat verdict.txt; echo "::guardblock::"; } || true
-          echo "summary<<EOF" >> "$GITHUB_OUTPUT"
-          cat verdict.txt >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+          # Script stderr (noise/errors) stays in the runner log only — it must
+          # never become part of the public summary or the injection surface.
+          cat verdict.stderr.log >&2 || true
+          # Sanitize verdict text (derived from untrusted PR diff content): strip
+          # control characters and cap length before it becomes an output.
+          tr -cd '[:print:]\n' < verdict.txt | head -c 4000 > verdict.sanitized.txt
+          # Use a random per-run delimiter for both the stop-commands zone and the
+          # $GITHUB_OUTPUT heredoc, so a verdict line cannot forge a static
+          # delimiter (e.g. "::guardblock::" or "EOF") to inject workflow/output
+          # commands.
+          DELIM="guardblock_$(openssl rand -hex 16)"
+          { echo "::stop-commands::$DELIM"; cat verdict.sanitized.txt; echo "::$DELIM::"; } || true
+          echo "summary<<$DELIM" >> "$GITHUB_OUTPUT"
+          cat verdict.sanitized.txt >> "$GITHUB_OUTPUT"
+          echo "$DELIM" >> "$GITHUB_OUTPUT"
 
       - name: Publish check-run (not applicable)
         if: steps.pr.outputs.act == 'notapplicable'
         env:
           GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.pr.outputs.sha }}
         run: |
           set -euo pipefail
           gh api -X POST "repos/${{ github.repository }}/check-runs" \
             -f name='claude-guard' \
-            -f head_sha='${{ steps.pr.outputs.sha }}' \
+            -f head_sha="$SHA" \
             -f status='completed' \
             -f conclusion='success' \
             -f 'output[title]=claude-guard: not applicable' \
@@ -86,21 +96,26 @@ jobs:
         if: steps.pr.outputs.act == 'run'
         env:
           GH_TOKEN: ${{ github.token }}
+          SUMMARY: ${{ steps.guard.outputs.summary }}
+          SHA: ${{ steps.pr.outputs.sha }}
+          CONCLUSION: ${{ steps.guard.outputs.conclusion }}
         run: |
           set -euo pipefail
           gh api -X POST "repos/${{ github.repository }}/check-runs" \
             -f name='claude-guard' \
-            -f head_sha='${{ steps.pr.outputs.sha }}' \
+            -f head_sha="$SHA" \
             -f status='completed' \
-            -f conclusion='${{ steps.guard.outputs.conclusion }}' \
-            -f 'output[title]=claude-guard: ${{ steps.guard.outputs.conclusion }}' \
-            -f 'output[summary]=${{ steps.guard.outputs.summary }}'
+            -f conclusion="$CONCLUSION" \
+            -f "output[title]=claude-guard: $CONCLUSION" \
+            -f "output[summary]=$SUMMARY"
 
       - name: Comment on block
         if: steps.pr.outputs.act == 'run' && steps.guard.outputs.conclusion == 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
           NUMBER: ${{ steps.pr.outputs.number }}
+          SUMMARY: ${{ steps.guard.outputs.summary }}
         run: |
-          gh pr comment "$NUMBER" --repo "${{ github.repository }}" \
-            --body $'🚫 **claude-guard blocked this PR.**\n\n```\n${{ steps.guard.outputs.summary }}\n```\n\nA maintainer must review; the bot may not merge changes outside its allowlist or into high-risk sources.'
+          set -euo pipefail
+          body=$'🚫 **claude-guard blocked this PR.**\n\n```\n'"$SUMMARY"$'\n```\n\nA maintainer must review; the bot may not merge changes outside its allowlist or into high-risk sources.'
+          gh pr comment "$NUMBER" --repo "${{ github.repository }}" --body "$body"
