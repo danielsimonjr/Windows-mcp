@@ -1,0 +1,14 @@
+# High-risk + infrastructure paths designate the maintainer as code owner.
+# NOTE: enforcement (branch-protection `require_code_owner_reviews`) is DEFERRED
+# to the auto-merge-enablement phase — turning it on now would break the existing
+# Dependabot auto-merge on .github/ (actions) and src csproj (nuget) bumps. This
+# file is in place so enforcement is a one-setting flip when auto-merge is enabled.
+/src/                     @danielsimonjr
+/.github/                 @danielsimonjr
+/tests/                   @danielsimonjr
+/*.sln                    @danielsimonjr
+/Directory.Build.props    @danielsimonjr
+/global.json              @danielsimonjr
+/nuget.config             @danielsimonjr
+/legacy/                  @danielsimonjr
+/bundle/                  @danielsimonjr
