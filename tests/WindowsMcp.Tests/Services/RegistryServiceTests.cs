@@ -91,6 +91,9 @@ public class RegistryServiceTests : IDisposable
         // (and does not throw from disposing the predefined base key).
         var svc = new RegistryService();
         var subs = await svc.EnumerateSubKeysAsync("HKCU", "");
-        subs.Should().Contain("Software");
+        // Registry key names are case-insensitive; the returned casing varies by
+        // environment (e.g. "Software" on a typical desktop vs "SOFTWARE" on hosted
+        // CI runners), so compare case-insensitively rather than by exact casing.
+        subs.Should().Contain(k => string.Equals(k, "Software", StringComparison.OrdinalIgnoreCase));
     }
 }
