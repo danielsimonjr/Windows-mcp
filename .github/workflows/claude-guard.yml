@@ -1,0 +1,106 @@
+name: Claude Guard
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  checks: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  guard:
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      # Checked out from the default branch (this workflow's own copy, per the
+      # workflow_run trigger semantics) — a PR cannot edit its own gate.
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Resolve PR + author
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          source .github/claude-guard.env
+          pr=$(gh api "repos/${{ github.repository }}/commits/$SHA/pulls" --jq '.[0] // empty')
+          if [ -z "$pr" ]; then
+            # No PR maps to this head SHA — not a PR context, nothing to gate.
+            echo "act=skip" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          author=$(jq -r '.user.login' <<<"$pr")
+          number=$(jq -r '.number' <<<"$pr")
+          echo "sha=$SHA"       >> "$GITHUB_OUTPUT"
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+          if [ "$author" != "$CLAUDE_BOT_LOGIN" ]; then
+            # claude-guard is a REQUIRED check on this repo, so every PR must get a
+            # check-run — otherwise non-claude-bot PRs would hang forever waiting on it.
+            echo "act=notapplicable" >> "$GITHUB_OUTPUT"
+          else
+            echo "act=run" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Evaluate guard
+        if: steps.pr.outputs.act == 'run'
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${{ github.repository }}/pulls/$NUMBER/files" --paginate \
+            --jq '.[].filename' > changed.txt
+          added=$(gh api "repos/${{ github.repository }}/pulls/$NUMBER" --jq '.additions')
+          if bash .github/scripts/claude-guard.sh changed.txt "$added" > verdict.txt 2>&1; then
+            echo "conclusion=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "conclusion=failure" >> "$GITHUB_OUTPUT"
+          fi
+          # Sanitize verdict text (derived from untrusted PR diff content) before it
+          # is ever echoed elsewhere, so it cannot inject further workflow commands.
+          { echo "::stop-commands::guardblock"; cat verdict.txt; echo "::guardblock::"; } || true
+          echo "summary<<EOF" >> "$GITHUB_OUTPUT"
+          cat verdict.txt >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Publish check-run (not applicable)
+        if: steps.pr.outputs.act == 'notapplicable'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api -X POST "repos/${{ github.repository }}/check-runs" \
+            -f name='claude-guard' \
+            -f head_sha='${{ steps.pr.outputs.sha }}' \
+            -f status='completed' \
+            -f conclusion='success' \
+            -f 'output[title]=claude-guard: not applicable' \
+            -f 'output[summary]=not a claude-bot PR — guard not applicable'
+
+      - name: Publish check-run (evaluated)
+        if: steps.pr.outputs.act == 'run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api -X POST "repos/${{ github.repository }}/check-runs" \
+            -f name='claude-guard' \
+            -f head_sha='${{ steps.pr.outputs.sha }}' \
+            -f status='completed' \
+            -f conclusion='${{ steps.guard.outputs.conclusion }}' \
+            -f 'output[title]=claude-guard: ${{ steps.guard.outputs.conclusion }}' \
+            -f 'output[summary]=${{ steps.guard.outputs.summary }}'
+
+      - name: Comment on block
+        if: steps.pr.outputs.act == 'run' && steps.guard.outputs.conclusion == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          gh pr comment "$NUMBER" --repo "${{ github.repository }}" \
+            --body $'🚫 **claude-guard blocked this PR.**\n\n```\n${{ steps.guard.outputs.summary }}\n```\n\nA maintainer must review; the bot may not merge changes outside its allowlist or into high-risk sources.'
