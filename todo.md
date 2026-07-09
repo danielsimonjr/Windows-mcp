@@ -3,6 +3,38 @@
 Cross-session task tracker. Done items kept briefly for context; see `CHANGELOG.md` for the
 full record.
 
+## 🚀 Claude-in-Actions (Phase 2) pilot — ACTIVE (blocked on Daniel for 2 setup items)
+
+Human-gated pilot: a doc-drift bot opens PRs, Daniel merges. Design survived two adversarial review
+rounds (Claude-opus + cross-model Gemini/OpenAI). Spec: `docs/superpowers/specs/2026-07-09-claude-in-actions-design.md` ·
+Plan: `docs/superpowers/plans/2026-07-09-claude-in-actions-pilot.md` · Setup: `.../claude-bot-setup-checklist.md`.
+
+### ✅ Done
+- [x] **Guard foundation (Tasks 1–3, PR#20).** `claude-guard.sh`+tests (allowlist / `src/**` capability
+  guard / one-concern caps / `..`-reject, 13 unit tests), agent-immutable `claude-guard.yml`
+  (`workflow_run`, always-posts a check, fail-closed on error), `guard-tests.yml`, CODEOWNERS, runbook.
+  Review caught + fixed a `${{ }}` script-injection, a rename bypass (`previous_filename`), added the error-trap.
+- [x] **Auth pivoted to `ANTHROPIC_API_KEY` (PR#21)** — service credential, metered, Console spend-limit = cost cap.
+- [x] **Guard proven live** on PR#21 (`claude-guard` = success via `workflow_run`).
+
+### ⏸ BLOCKED on Daniel (only he can do these — then the rest unblocks)
+- [ ] **Set the API-key secret:** `gh secret set ANTHROPIC_API_KEY --repo danielsimonjr/Windows-mcp`
+  (dedicated Console key + spend limit recommended). The auto-mode classifier blocks me from setting an `sk-ant` secret.
+- [ ] **Create the `claude-bot` GitHub App** — Contents + Pull requests = write ONLY, install on Windows-mcp;
+  add `CLAUDE_BOT_APP_ID` + `CLAUDE_BOT_APP_PRIVATE_KEY` secrets. (Needed so the bot's PR is bot-authored and its push retriggers CI → the guard.)
+- [ ] **Telegram digest secrets:** `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`.
+
+### 🔧 Pending me (execute subagent-driven once the above exist)
+- [ ] **Task 4** — `claude-maintenance.yml` doc-drift bot (`workflow_dispatch`, SHA-pinned action, own-branch PR, idempotent).
+- [ ] **Task 5** — `claude-digest.yml` weekly Telegram digest.
+- [ ] **Task 6** — pilot validation against the 3 success criteria.
+- [ ] **Runbook Step 2** — add `claude-guard` as a REQUIRED check (after it has run once; it has — PR#21).
+
+### 🔮 Deferred (later phases, not now)
+- [ ] **Phase 2b** — the Dependabot-CI-fix bot (hardened: no-build diagnosis off existing CI logs, patch-validation
+  in a zero-secret job, real push-permission fix, attempt limiter). Deferred as unsafe/mechanically-hard for now.
+- [ ] **Earned auto-merge** for doc-only PRs → then enable CODEOWNERS `require_code_owner_reviews` (reconcile Dependabot first).
+
 ## ✅ Fixed 2026-07-08 (found during process-lineage work; fixed at root, not deferred)
 
 - [x] **`PowerShellService` backstop consumed by queue-wait** (was surfacing as the
