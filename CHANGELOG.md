@@ -1,5 +1,19 @@
 ## [Unreleased]
 
+### Added
+- **Claude-in-Actions guard foundation (CI / dev infrastructure).** An agent-immutable
+  `claude-guard` workflow (`workflow_run`-triggered so it always runs from `main`, a PR cannot edit
+  its own gate) that checks any future automation PR against a docs-only allowlist, an `src/**`
+  capability guard, one-concern caps, and a `..`-traversal reject — posting a `claude-guard`
+  check-run (fail-closed on error). Backed by a unit-tested policy script
+  (`.github/scripts/claude-guard.sh`, 13 tests, run in CI via `guard-tests.yml`), plus `CODEOWNERS`,
+  an activation runbook, and the Phase-2 design spec/plan under `docs/superpowers/`. Pilot Claude
+  auth is `ANTHROPIC_API_KEY` (a service credential with a Console spend cap). Part of the
+  human-gated "Claude-in-Actions" doc-drift bot pilot; the bot itself (maintenance workflow +
+  digest) is pending credential provisioning. Design survived two adversarial review rounds
+  (Claude-opus + cross-model Gemini/OpenAI), which caught and fixed a workflow script-injection and
+  a rename bypass before merge.
+
 ## [0.6.0] - 2026-07-08
 
 ### Added
