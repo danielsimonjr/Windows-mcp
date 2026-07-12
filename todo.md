@@ -33,6 +33,18 @@ didn't have it. Check first:
   name-filter bug** (fixed in 0.6.1). Orphan detection verified both directions: no false positive
   (explorer's dead parent → correctly orphaned) and no false negative (WindowsMcp's live parent →
   correctly not orphaned).
+- [x] **`process orphans` + the kill guards — fully e2e-verified (2026-07-12).** Cross-checked the
+  tool's orphan set against an independently computed one (recycle-aware rule, raw WMI, 385 procs):
+  **zero false positives, zero false negatives**. All 4 recycled-PID-parent cases caught — incl.
+  `Secure System`/`Registry`, whose parent (PID 4) is *alive*, so a naive alive-check would clear
+  them; catching them proves the recycle rule is really running. Then **manufactured a real orphan**
+  (spawner exits, child survives) — tool reported it with every field exact (pid/ppid/`ParentName:
+  null`/`Orphaned`/`RuntimeKind: shell`/`RootPid: self`/start time to the microsecond), matched via
+  **command line** (the name is just `powershell.exe`). Kill guards: a **wrong** `startTime` aborted
+  the kill and the process survived; the **correct** `startTime` killed it. **Found the error-message
+  masking bug** (fixed in 0.6.1). Gotcha for future sweeps: a WMI `CommandLine -like '*marker*'`
+  query **matches its own process chain** — build the marker from parts at runtime, or you will
+  "find" phantom leftovers and kill your own shell.
 - [x] **MCP handshake / `serverInfo`** — **found it misreporting `0.4.1` for three releases**
   (fixed in 0.6.1: version now derives from `<Version>` in `Directory.Build.props` and is pinned to
   `plugin.json` by `ServerInfoTests`). Re-verified over stdio: the rebuilt bundle reports `0.6.1`.

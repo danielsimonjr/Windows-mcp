@@ -34,6 +34,21 @@
   reads it off the assembly (no literal to rot), and `ServerInfoTests` pins it to
   `.claude-plugin/plugin.json` so a bump that misses one of them fails the test gate.
 
+- **Every caller-facing error message in the server was being thrown away** — found by e2e-testing
+  the orphan/kill features. The MCP SDK masks any exception that isn't an `McpException`, returning
+  a bare `"An error occurred invoking '<tool>'."`. Sensible for unexpected faults; actively harmful
+  for our **deliberate refusals**, whose messages are the whole point. The worst case is the
+  PID-reuse start-time guard: it aborts a kill with
+  `"pid N start time … != expected …; aborting (possible PID reuse)"` — and that was flattened to
+  the generic string, making a guard abort **indistinguishable from a crash**. A caller could
+  reasonably "retry" the kill without the guard, causing precisely the kill the guard exists to
+  prevent. This affected all 54 intentional throws across 11 tool classes.
+  Fixed at the boundary with a single `AddCallToolFilter` middleware (`Program.cs` + `ToolErrors`)
+  that surfaces caller-facing refusals (`ArgumentException` / `InvalidOperationException`) verbatim
+  with `isError: true`, while unexpected faults keep the SDK's masking (no internals leak). Services
+  stay MCP-agnostic and no call sites changed. Verified live over stdio — the guard, the missing
+  `confirm`, bad `startTime`, bad param combos, unknown actions, and dead PIDs all now report why.
+
 ### Changed
 - `ProcessService.ListAsync` filters by name **before** projecting to DTOs — `MainModule` access
   opens a native handle and throws on protected processes, so skipping non-matches is cheaper and

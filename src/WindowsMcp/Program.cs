@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Windows.Win32;
 using Windows.Win32.UI.HiDpi;
@@ -103,6 +104,26 @@ internal static class Program
             {
                 o.ServerInfo = new() { Name = "Windows-mcp", Version = ServerVersion };
             })
+            // Surface our deliberate refusals verbatim. Without this the SDK flattens every
+            // non-McpException to "An error occurred invoking '<tool>'.", so the PID-reuse guard
+            // aborting a kill looks identical to the tool crashing — and a caller may "retry"
+            // without the guard, causing exactly the kill the guard existed to prevent.
+            // Unexpected faults still fall through to the SDK's masking. See ToolErrors.
+            .WithRequestFilters(f => f.AddCallToolFilter(next => async (ctx, ct) =>
+            {
+                try
+                {
+                    return await next(ctx, ct);
+                }
+                catch (Exception ex) when (ToolErrors.IsCallerFacing(ex))
+                {
+                    return new CallToolResult
+                    {
+                        IsError = true,
+                        Content = [new TextContentBlock { Text = ex.Message }],
+                    };
+                }
+            }))
             .WithStdioServerTransport()
             .WithToolsFromAssembly();   // source generator discovers [McpServerTool] methods
 
