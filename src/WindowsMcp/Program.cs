@@ -11,6 +11,15 @@ namespace WindowsMcp;
 
 internal static class Program
 {
+    /// <summary>
+    /// The version this server reports over MCP, taken from &lt;Version&gt; in Directory.Build.props.
+    /// Never hardcode it: the previous literal silently rotted for three releases (stuck at "0.4.1"
+    /// while 0.5.0 and 0.6.0 shipped), and a server that misreports its own version is exactly what
+    /// makes a stale-bundle deploy invisible. Pinned to plugin.json by ServerInfoTests.
+    /// </summary>
+    internal static string ServerVersion { get; } =
+        System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
+
     public static async Task<int> Main(string[] args)
     {
         // Register AppUserModelID first so WinRT ToastNotification works.
@@ -92,7 +101,7 @@ internal static class Program
         builder.Services
             .AddMcpServer(o =>
             {
-                o.ServerInfo = new() { Name = "Windows-mcp", Version = "0.4.1" };
+                o.ServerInfo = new() { Name = "Windows-mcp", Version = ServerVersion };
             })
             .WithStdioServerTransport()
             .WithToolsFromAssembly();   // source generator discovers [McpServerTool] methods
