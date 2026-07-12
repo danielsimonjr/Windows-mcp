@@ -33,8 +33,12 @@ public sealed class ProcessTools
         "ancestor. orphans: lineage rows where the parent is gone (recycle-aware: parent absent, or " +
         "a live same-PID process started AFTER the child). NOTE orphaned is COMMON and by-design on " +
         "Windows (explorer.exe and apps from a closed shell are orphaned) — it is NOT a leak signal; " +
-        "use the signals to rank, the tool does not judge. name filters list/orphans by substring on " +
-        "name OR command line. kill: by pid or name (kills all matching), confirm:true required. " +
+        "use the signals to rank, the tool does not judge. name filters list/orphans by substring, " +
+        "case-insensitive: on name OR command line for orphans/includeLineage/groupByRoot, on name " +
+        "only for the plain list (a plain row carries no command line). With groupByRoot it returns " +
+        "the whole trees that contain a match (full membership, true DescendantCount) — it does not " +
+        "trim the tree. kill: by pid or name (EXACT name match, kills all matching), confirm:true " +
+        "required. " +
         "tree:true and startTime apply to pid-based kills ONLY (an error is raised if given with " +
         "name and no pid). tree:true kills the pid AND its descendants (leaves-first, each " +
         "re-validated against the snapshot before killing). startTime (ISO-8601) guards against PID " +
@@ -54,10 +58,10 @@ public sealed class ProcessTools
         {
             case "list":
                 if (groupByRoot)
-                    return JsonSerializer.Serialize(await _process.GroupByRootAsync(ct));
+                    return JsonSerializer.Serialize(await _process.GroupByRootAsync(name, ct));
                 if (includeLineage)
                     return JsonSerializer.Serialize(await _process.ListLineageAsync(false, name, ct));
-                return JsonSerializer.Serialize(await _process.ListAsync(ct));
+                return JsonSerializer.Serialize(await _process.ListAsync(name, ct));
 
             case "orphans":
                 return JsonSerializer.Serialize(await _process.ListLineageAsync(true, name, ct));
@@ -94,7 +98,9 @@ public sealed class ProcessTools
                     // name-based kill (a caller expecting tree semantics must not get a plain kill).
                     if (tree || start is not null)
                         throw new ArgumentException("'tree' and 'startTime' require 'pid' (they do not apply to name-based kills)");
-                    var all = await _process.ListAsync(ct);
+                    // Deliberately unfiltered: a kill matches the name EXACTLY. Reusing the list's
+                    // substring filter here would make `kill --name node` also kill `node-inspector`.
+                    var all = await _process.ListAsync(null, ct);
                     var targets = all.Where(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase)).ToArray();
                     foreach (var t in targets)
                         await _process.KillAsync(t.Pid, ct);

@@ -111,6 +111,72 @@ public class ProcessLineageTests
         g.RootName.Should().Be("claude.exe");
     }
 
+    // A filtered group keeps its FULL membership and true DescendantCount — the filter selects
+    // which trees to show, it never trims a tree. Trimming would make DescendantCount mean
+    // "matching descendants", which reads as "descendants" and misleads.
+    [Fact]
+    public void GroupByRoot_filter_returns_whole_trees_that_contain_a_match()
+    {
+        var rows = new[]
+        {
+            Row(1, 0, "explorer.exe", Now.AddMinutes(-90)),
+            Row(2, 1, "claude.exe", Now.AddMinutes(-80)),
+            Row(3, 1, "svchost.exe", Now.AddMinutes(-80)),
+            Row(10, 0, "chrome.exe", Now.AddMinutes(-70)),
+            Row(11, 10, "chrome.exe", Now.AddMinutes(-60)),
+        };
+        var groups = ProcessLineage.GroupByRoot(ProcessLineage.Classify(rows, Now), "claude");
+
+        // Only explorer's tree contains a claude match; chrome's tree is dropped entirely.
+        groups.Should().ContainSingle();
+        var g = groups.Single();
+        g.RootPid.Should().Be(1);
+        g.DescendantCount.Should().Be(3);                        // true count, not 1
+        g.ChildPids.Should().BeEquivalentTo(new[] { 1, 2, 3 });  // full membership, incl. non-matching
+    }
+
+    [Fact]
+    public void GroupByRoot_filter_matches_command_line_and_is_case_insensitive()
+    {
+        var rows = new[]
+        {
+            Row(1, 0, "explorer.exe", Now.AddMinutes(-90)),
+            Row(2, 1, "node.exe", Now.AddMinutes(-80), cmd: @"node C:\tools\WIDGET\server.js"),
+            Row(10, 0, "chrome.exe", Now.AddMinutes(-70)),
+        };
+        var groups = ProcessLineage.GroupByRoot(ProcessLineage.Classify(rows, Now), "widget");
+        groups.Should().ContainSingle();
+        groups.Single().RootPid.Should().Be(1);
+    }
+
+    [Fact]
+    public void GroupByRoot_filter_with_no_match_returns_empty_not_everything()
+    {
+        var rows = new[]
+        {
+            Row(1, 0, "explorer.exe", Now.AddMinutes(-90)),
+            Row(2, 1, "node.exe", Now.AddMinutes(-80)),
+        };
+        // The live bug: a filter matching nothing returned the ENTIRE process table.
+        ProcessLineage.GroupByRoot(ProcessLineage.Classify(rows, Now), "zzz_no_such_process")
+            .Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void GroupByRoot_without_filter_returns_all_groups(string? filter)
+    {
+        var rows = new[]
+        {
+            Row(1, 0, "explorer.exe", Now.AddMinutes(-90)),
+            Row(10, 0, "chrome.exe", Now.AddMinutes(-70)),
+        };
+        ProcessLineage.GroupByRoot(ProcessLineage.Classify(rows, Now), filter)
+            .Should().HaveCount(2);
+    }
+
     [Fact]
     public void IsSystemAdjacent_flags_boot_processes()
     {

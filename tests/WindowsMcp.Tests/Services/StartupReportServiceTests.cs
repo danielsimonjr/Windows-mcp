@@ -26,7 +26,7 @@ public class StartupReportServiceTests
 
         public Fakes()
         {
-            Process.Setup(x => x.ListAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<ProcessDto>());
+            Process.Setup(x => x.ListAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<ProcessDto>());
             Registry.Setup(x => x.EnumerateValuesAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(Array.Empty<RegistryValueDto>());
             Registry.Setup(x => x.EnumerateSubKeysAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -179,7 +179,7 @@ public class StartupReportServiceTests
     public async Task Section_failure_is_isolated_and_other_sections_still_populate()
     {
         var f = new Fakes();
-        f.Process.Setup(x => x.ListAsync(It.IsAny<CancellationToken>()))
+        f.Process.Setup(x => x.ListAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("boom"));
         f.Lsp.Setup(x => x.Enumerate()).Returns(new[] { new LspProviderDto(1, "MSAFD", @"C:\x.dll") });
 

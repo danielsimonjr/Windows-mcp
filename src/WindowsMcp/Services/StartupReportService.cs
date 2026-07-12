@@ -109,7 +109,7 @@ public sealed class StartupReportService : IStartupReportService
 
     private async Task<ProcessEntry[]> BuildProcessesAsync(CancellationToken ct)
     {
-        var procs = await _process.ListAsync(ct);
+        var procs = await _process.ListAsync(null, ct);
         return procs.Select(p =>
         {
             var (t, s) = Sig(p.Path);

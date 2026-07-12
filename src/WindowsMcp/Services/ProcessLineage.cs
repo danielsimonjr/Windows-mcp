@@ -66,10 +66,26 @@ public static class ProcessLineage
         return result.ToArray();
     }
 
-    public static ProcessGroupDto[] GroupByRoot(ProcessLineageDto[] procs)
+    /// <summary>Substring match on process name OR command line, case-insensitive.</summary>
+    public static bool Matches(ProcessLineageDto p, string filter) =>
+        p.Name.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+        (p.CommandLine?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false);
+
+    /// <summary>
+    /// Collapse processes under their nearest-live root ancestor. When <paramref name="nameFilter"/>
+    /// is set, only groups containing at least one matching process are returned — each still with
+    /// its FULL membership and true DescendantCount. The filter selects which trees to show; it
+    /// never trims a tree, because a trimmed count still reads as "descendants" and would mislead.
+    /// </summary>
+    public static ProcessGroupDto[] GroupByRoot(ProcessLineageDto[] procs, string? nameFilter = null)
     {
         var byId = procs.ToDictionary(p => p.Pid);
-        return procs.GroupBy(p => p.RootPid)
+        IEnumerable<IGrouping<int, ProcessLineageDto>> groups = procs.GroupBy(p => p.RootPid);
+
+        if (!string.IsNullOrWhiteSpace(nameFilter))
+            groups = groups.Where(g => g.Any(p => Matches(p, nameFilter)));
+
+        return groups
             .Select(g =>
             {
                 byId.TryGetValue(g.Key, out var root);

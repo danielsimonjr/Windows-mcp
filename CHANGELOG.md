@@ -1,3 +1,32 @@
+## [0.6.1] - 2026-07-12
+
+### Fixed
+- **`process list` silently ignored the `name` filter on two of its three paths** — found by live
+  e2e testing against the 0.6.0 server. `ProcessTools.Process` forwarded `name` only on the
+  `includeLineage` path; the plain-`list` and `groupByRoot` paths called `ListAsync(ct)` /
+  `GroupByRootAsync(ct)`, which had **no filter parameter at all** on `IProcessService`. A filter
+  matching nothing therefore returned the **entire process table** (~360 rows) instead of an empty
+  result — silent, and the opposite of the safe failure direction: a caller narrowing to
+  `name: "chrome"` to pick a PID to kill was handed the whole machine. Root-caused at the
+  interface (the tool had nowhere to pass the filter), not patched at the call site:
+  - `IProcessService.ListAsync` and `GroupByRootAsync` now take `string? nameFilter = null`.
+  - Plain `list` matches a case-insensitive substring of the **name only** (a `ProcessDto` carries
+    no command line); `orphans` / `includeLineage` / `groupByRoot` match name **or** command line.
+    The tool description previously over-promised command-line matching on every path; corrected.
+  - `groupByRoot` + filter returns the **whole trees that contain a match** — full membership and
+    a true `DescendantCount`. It deliberately does not trim the tree: a trimmed count still reads
+    as "descendants" and would mislead.
+  - The name-based `kill` path stays on **exact** matching (it passes no filter), so
+    `kill --name node` cannot also kill `node-inspector`.
+  - The bug shipped because `Process_list_groupByRoot_calls_GroupByRootAsync` asserted only that
+    the method *was called*, never that the argument arrived. Tests now assert on the forwarded
+    argument. +9 tests (205 pass, 0 fail).
+
+### Changed
+- `ProcessService.ListAsync` filters by name **before** projecting to DTOs — `MainModule` access
+  opens a native handle and throws on protected processes, so skipping non-matches is cheaper and
+  quieter. Extracted the duplicated name-or-command-line predicate into `ProcessLineage.Matches`.
+
 ## [Unreleased]
 
 ### Added

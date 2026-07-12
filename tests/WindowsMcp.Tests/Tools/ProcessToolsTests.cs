@@ -88,11 +88,54 @@ public class ProcessToolsTests
     public async Task Process_list_groupByRoot_calls_GroupByRootAsync()
     {
         var mock = new Mock<IProcessService>();
-        mock.Setup(m => m.GroupByRootAsync(It.IsAny<CancellationToken>()))
+        mock.Setup(m => m.GroupByRootAsync(null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(System.Array.Empty<ProcessGroupDto>());
         var tools = Make(mock.Object);
         await tools.Process("list", groupByRoot: true);
-        mock.Verify(m => m.GroupByRootAsync(It.IsAny<CancellationToken>()), Times.Once);
+        mock.Verify(m => m.GroupByRootAsync(null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // The `name` filter was silently dropped on both non-lineage list paths: a filter matching
+    // nothing returned the entire process table. Verifying only that the method was *called*
+    // (not that the argument arrived) is what let this ship — so assert on the argument.
+    [Fact]
+    public async Task Process_list_groupByRoot_forwards_name_filter()
+    {
+        var mock = new Mock<IProcessService>();
+        mock.Setup(m => m.GroupByRootAsync("chrome", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(System.Array.Empty<ProcessGroupDto>());
+        var tools = Make(mock.Object);
+        await tools.Process("list", name: "chrome", groupByRoot: true);
+        mock.Verify(m => m.GroupByRootAsync("chrome", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Process_list_plain_forwards_name_filter()
+    {
+        var mock = new Mock<IProcessService>();
+        mock.Setup(m => m.ListAsync("chrome", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(System.Array.Empty<ProcessDto>());
+        var tools = Make(mock.Object);
+        await tools.Process("list", name: "chrome");
+        mock.Verify(m => m.ListAsync("chrome", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // A name-based kill must keep matching exactly (not by substring), so it must NOT reuse the
+    // list filter — otherwise `kill --name node` would also kill `node-inspector`.
+    [Fact]
+    public async Task Process_kill_by_name_does_not_apply_the_substring_list_filter()
+    {
+        var mock = new Mock<IProcessService>();
+        mock.Setup(m => m.ListAsync(null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[]
+            {
+                new ProcessDto(1, "node", null, 10),
+                new ProcessDto(2, "node-inspector", null, 10),
+            });
+        var tools = Make(mock.Object);
+        await tools.Process("kill", name: "node", confirm: true);
+        mock.Verify(m => m.KillAsync(1, It.IsAny<CancellationToken>()), Times.Once);
+        mock.Verify(m => m.KillAsync(2, It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

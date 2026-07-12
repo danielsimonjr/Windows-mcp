@@ -11,7 +11,7 @@ public sealed class ProcessService : IProcessService
 
     public ProcessService(IWmiService wmi) => _wmi = wmi;
 
-    public Task<ProcessDto[]> ListAsync(CancellationToken ct = default)
+    public Task<ProcessDto[]> ListAsync(string? nameFilter = null, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
@@ -20,7 +20,14 @@ public sealed class ProcessService : IProcessService
         var processes = Process.GetProcesses();
         try
         {
-            var dtos = processes
+            IEnumerable<Process> q = processes;
+
+            // Filter on the name BEFORE projecting: MainModule access opens a native handle and
+            // throws on protected processes, so skipping non-matches is both cheaper and quieter.
+            if (!string.IsNullOrWhiteSpace(nameFilter))
+                q = q.Where(p => p.ProcessName.Contains(nameFilter, StringComparison.OrdinalIgnoreCase));
+
+            var dtos = q
                 .Select(p =>
                 {
                     string? path = null;
@@ -158,14 +165,13 @@ public sealed class ProcessService : IProcessService
         IEnumerable<ProcessLineageDto> q = all;
         if (orphansOnly) q = q.Where(p => p.Orphaned);
         if (!string.IsNullOrWhiteSpace(nameFilter))
-            q = q.Where(p =>
-                p.Name.Contains(nameFilter, StringComparison.OrdinalIgnoreCase) ||
-                (p.CommandLine?.Contains(nameFilter, StringComparison.OrdinalIgnoreCase) ?? false));
+            q = q.Where(p => ProcessLineage.Matches(p, nameFilter));
         return q.ToArray();
     }
 
-    public async Task<ProcessGroupDto[]> GroupByRootAsync(CancellationToken ct = default)
-        => ProcessLineage.GroupByRoot(ProcessLineage.Classify(await SnapshotAsync(ct), DateTime.UtcNow));
+    public async Task<ProcessGroupDto[]> GroupByRootAsync(string? nameFilter = null, CancellationToken ct = default)
+        => ProcessLineage.GroupByRoot(
+            ProcessLineage.Classify(await SnapshotAsync(ct), DateTime.UtcNow), nameFilter);
 
     public Task KillGuardedAsync(int pid, DateTime expectedStartUtc, CancellationToken ct = default)
     {
