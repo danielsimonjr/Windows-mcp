@@ -33,6 +33,14 @@ didn't have it. Check first:
   name-filter bug** (fixed in 0.6.1). Orphan detection verified both directions: no false positive
   (explorer's dead parent → correctly orphaned) and no false negative (WindowsMcp's live parent →
   correctly not orphaned).
+- [x] **MCP handshake / `serverInfo`** — **found it misreporting `0.4.1` for three releases**
+  (fixed in 0.6.1: version now derives from `<Version>` in `Directory.Build.props` and is pinned to
+  `plugin.json` by `ServerInfoTests`). Re-verified over stdio: the rebuilt bundle reports `0.6.1`.
+
+**Reusable harness:** drive any tool against the *rebuilt* `bundle/WindowsMcp.exe` over MCP stdio
+without a marketplace round-trip — spawn the exe, `initialize` → `notifications/initialized` →
+`tools/call`. This is how the 0.6.1 fix was verified before merge (reproduce the original failure,
+then watch it not happen), and it sidesteps the cache-clone deploy lag entirely.
 
 ### 🔁 Re-run against 0.6.1 (previously errored, never re-verified after redeploy)
 - [ ] `process orphans` — errored 2026-07-08; almost certainly the stale-0.5.0-binary trap. Now

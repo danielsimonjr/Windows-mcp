@@ -22,6 +22,18 @@
     the method *was called*, never that the argument arrived. Tests now assert on the forwarded
     argument. +9 tests (205 pass, 0 fail).
 
+- **The server misreported its own version over MCP** — the handshake returned
+  `serverInfo.version = "0.4.1"`, a hardcoded literal in `Program.cs` that had been stale for
+  **three releases** (0.5.0, 0.6.0 and 0.6.1 all shipped announcing 0.4.1). Surfaced while
+  e2e-testing the rebuilt bundle. Not cosmetic: this plugin is served from a per-version cache
+  clone of the committed `bundle/`, so a stale bundle is otherwise invisible and `serverInfo` is
+  the natural thing to check — a server that lies about its version is what let v0.6.0 sit
+  undeployed for four days while 0.5.0 kept answering. Root cause was three disagreeing sources of
+  truth (the literal, an unset `<Version>` leaving the assembly at 1.0.0, and `plugin.json`). Now
+  `<Version>` in `Directory.Build.props` is the single build-side source, `Program.ServerVersion`
+  reads it off the assembly (no literal to rot), and `ServerInfoTests` pins it to
+  `.claude-plugin/plugin.json` so a bump that misses one of them fails the test gate.
+
 ### Changed
 - `ProcessService.ListAsync` filters by name **before** projecting to DTOs — `MainModule` access
   opens a native handle and throws on protected processes, so skipping non-matches is cheaper and
