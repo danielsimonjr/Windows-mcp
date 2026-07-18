@@ -1,3 +1,17 @@
+## [0.6.2] - 2026-07-17
+
+### Changed
+- **`windows` skill: added a "disk-saturation storm" gotcha** to the *Safety rails & gotchas*
+  section. Documents that long `powershell`/heavy tool calls (>~120s) are safe on their own — the
+  Claude Code harness detaches them at 120s (benign) and delivers the result on completion, and the
+  server already allows a 10-min PowerShell backstop — but stacking heavy ops (`DISM` + `service`
+  stop + bulk deletes) **during an already-saturated disk** (e.g. a concurrent large hash/copy) can
+  fail the MCP call transiently with `"An error occurred invoking 'powershell'"`. Clarifies this is
+  I/O starvation, **not** a 120s limit or a `MCP_TOOL_TIMEOUT` issue (that env var defaults to ~28 h),
+  and that the mitigation is to run the heaviest ops via Claude Code's own `run_in_background`.
+  Verified 2026-07-17 by controlled probes (lone 150s and two concurrent ~135s calls all succeeded;
+  no server crash). Docs-only; no code or tool-surface change.
+
 ## [0.6.1] - 2026-07-12
 
 ### Fixed
