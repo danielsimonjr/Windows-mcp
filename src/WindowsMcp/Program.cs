@@ -99,6 +99,7 @@ internal static class Program
         builder.Services.AddSingleton<IShortcutResolver, ShortcutResolver>();
         builder.Services.AddSingleton<IStartupReportService, StartupReportService>();
         builder.Services.AddSingleton<IIntegrityService, IntegrityService>();
+        builder.Services.AddSingleton<IUsnService, UsnService>();
 
         builder.Services
             .AddMcpServer(o =>
