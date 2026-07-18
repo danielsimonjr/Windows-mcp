@@ -100,6 +100,7 @@ internal static class Program
         builder.Services.AddSingleton<IStartupReportService, StartupReportService>();
         builder.Services.AddSingleton<IIntegrityService, IntegrityService>();
         builder.Services.AddSingleton<IUsnService, UsnService>();
+        builder.Services.AddSingleton<IWatchService, WatchService>();
 
         builder.Services
             .AddMcpServer(o =>
