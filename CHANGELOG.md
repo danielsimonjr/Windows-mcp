@@ -1,3 +1,20 @@
+## [0.7.0] - 2026-07-18
+
+### Added
+- **Monitoring / integrity domain — 3 new tools (60 -> 63), for the maintain-and-protect mandate:**
+  - **`integrity`** (baseline/check/list): a file-integrity **tripwire**. SHA-256 snapshots a curated
+    watch-list (hosts file, user+machine Startup folders, `~/.claude/settings.json`, `~/.gitconfig`,
+    the `C:\` governance files) to `%LOCALAPPDATA%\windows-mcp\integrity` (outside the plugin cache,
+    survives upgrades); `check` diffs current vs baseline into added/removed/modified.
+  - **`fs_changes`** (status/since): NTFS **USN change-journal** reader — whole-volume file-change
+    tracking via native `DeviceIoControl` (`FSCTL_QUERY/READ_USN_JOURNAL`), raw byte-buffer parsing
+    (no fragile struct marshalling). `status` gives the journal id + FirstUsn/NextUsn range; `since`
+    reads change records forward from a USN. Requires elevation. Native path live-verified against C:.
+  - **`watch`** (start/poll/stop/list): live **FileSystemWatcher** sessions; created/changed/deleted/
+    renamed events buffer server-side in a bounded ring (oldest dropped when full) between polls.
+- 21 new unit tests (integrity temp-dir diff, USN buffer parser + reason flags, bounded ring buffer,
+  watch lifecycle). Full suite: 232 passing. Docs/skill updated to 63 tools / 18 tool classes.
+
 ## [0.6.2] - 2026-07-17
 
 ### Changed

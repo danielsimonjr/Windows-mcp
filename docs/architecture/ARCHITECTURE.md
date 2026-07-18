@@ -14,7 +14,7 @@ Windows-MCP follows a four-layer architecture built on .NET 9 with dependency in
                                     ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                           Tool Layer                                         │
-│                 (15 [McpServerToolType] classes, 60 tools)                   │
+│                 (18 [McpServerToolType] classes, 63 tools)                   │
 │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ │
 │  │InputTools  │ │UIAutoTools │ │ FileTools  │ │SystemTools │ │WindowTools │ │
 │  │  8 tools   │ │  8 tools   │ │  9 tools   │ │  9 tools   │ │  5 tools   │ │
