@@ -1,4 +1,13 @@
-## [0.8.0] - 2026-08-23
+## [0.7.3] - 2026-08-23
+
+> **Numbered 0.7.3, not 0.8.0.** This release was first cut as 0.8.0 and the tag was refused:
+> `v0.8.0` **already exists in this repo and belongs to UPSTREAM** (jeomon's Windows-MCP,
+> tagged 2026-05-19, "Add --stateless-http support for streamable-http transport"), which is not
+> an ancestor of this history. This fork inherited upstream's tag namespace, and its own tags stop
+> at `v0.4.1` while `plugin.json` had already drifted to 0.7.x - so 0.6.9 through 0.8.5 are all
+> upstream's. Nothing was force-moved. 0.7.3 is free and adjacent to this plugin's actual lineage.
+> **The next release must check `git tag -l` before choosing a number**; upstream is at v0.8.5, so
+> 0.8.x and 0.9.x are contested ground.
 
 ### Changed
 
