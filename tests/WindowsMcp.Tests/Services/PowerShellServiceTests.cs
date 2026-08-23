@@ -70,6 +70,69 @@ public class PowerShellServiceTests
         result.Stdout.Should().Contain("em—dash").And.Contain("café").And.Contain("✓");
     }
 
+    // The paired negative control: filtering CLIXML must NOT make failures look green.
+    // NOTE: this service invokes via -EncodedCommand, where a non-terminating failure (unknown
+    // cmdlet) still EXITS 0 and announces itself only on stderr. So the exit code alone cannot
+    // carry Success - a first attempt at this fix keyed on it and made the invalid-command test
+    // pass a genuinely failed command.
+    [Fact]
+    public async Task RunAsync_still_reports_failure_when_stderr_carries_a_real_diagnostic()
+    {
+        using var svc = new PowerShellService(NullLogger.Instance);
+        var result = await svc.RunAsync("Get-DoesNotExistCommand");
+        result.Success.Should().BeFalse("a real diagnostic on stderr is still a failure");
+        result.Errors.Should().NotBeEmpty();
+        result.Errors.Should().NotContain(e => e.StartsWith("#< CLIXML"), "scaffolding must be filtered even on failures");
+    }
+
+    // CLIXML is TRANSPORT framing, but one <Objs> document carries BOTH progress and error
+    // records. Dropping the whole line therefore discards real diagnostics - that was tried and
+    // it made a genuinely failed command report success. Extract the Error payloads instead.
+    [Fact]
+    public void ParseErrors_extracts_error_records_and_drops_progress_only_documents()
+    {
+        var lf = ((char)10).ToString();
+        var progressOnly = "#< CLIXML" + lf +
+            """<Objs Version="1.1.0.1"><Obj S="progress" RefId="0"><MS><PR N="Record"><AV>Preparing modules for first use.</AV></PR></MS></Obj></Objs>""";
+        PowerShellService.ParseErrors(progressOnly).Should().BeEmpty("a progress-only document is pure noise");
+
+        var withError =
+            """<Objs Version="1.1.0.1"><Obj S="progress" RefId="0"><MS><PR N="Record"><AV>Preparing modules.</AV></PR></MS></Obj><S S="Error">Get-Nope : not recognized_x000D__x000A_</S></Objs>""";
+        var errors = PowerShellService.ParseErrors(withError);
+        errors.Should().ContainSingle();
+        errors[0].Should().Contain("Get-Nope").And.Contain("not recognized");
+        errors[0].Should().NotContain("_x000D_", "CR/LF placeholders must be decoded away");
+        errors[0].Should().NotContain("<S S=", "the caller should never see transport markup");
+    }
+
+    // Plain (non-CLIXML) stderr must pass through untouched.
+    [Fact]
+    public void ParseErrors_passes_plain_stderr_through()
+    {
+        var lf2 = ((char)10).ToString();
+        var errors = PowerShellService.ParseErrors("plain failure line" + lf2 + "second line");
+        errors.Should().BeEquivalentTo(new[] { "plain failure line", "second line" });
+    }
+
+    // REGRESSION (EVO-X2, 2026-08-23): defender_status returned every field null with
+    // "The JSON value could not be converted ... Path: $.FullScanEndTime". Cause: a calculated
+    // property whose scriptblock emits NOTHING serializes as an empty OBJECT {}, which cannot
+    // convert to DateTime? and fails the entire DTO. The machine had simply never completed a
+    // full scan. This asserts the shape the fix depends on, using the same Select-Object form.
+    [Fact]
+    public async Task RunAsync_calculated_property_emits_json_null_not_empty_object()
+    {
+        using var svc = new PowerShellService(NullLogger.Instance);
+
+        var withoutElse = await svc.RunAsync(
+            "[PSCustomObject]@{X=$null} | Select-Object @{n='X';e={if($_.X){$_.X.ToString('o')}}} | ConvertTo-Json");
+        withoutElse.Stdout.Should().Contain("{", "this documents the BUG shape: an emitting-nothing scriptblock yields an empty object");
+
+        var withElse = await svc.RunAsync(
+            "[PSCustomObject]@{X=$null} | Select-Object @{n='X';e={if($_.X){$_.X.ToString('o')}else{$null}}} | ConvertTo-Json");
+        withElse.Stdout.Should().Contain("null", "an explicit $null must serialize as JSON null so DateTime? can bind");
+    }
+
     [Fact]
     public async Task RunAsync_returns_error_for_invalid_command()
     {

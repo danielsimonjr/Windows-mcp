@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text.RegularExpressions;
 using System.Diagnostics;
 using System.Text;
 using Microsoft.Extensions.Logging;
@@ -100,11 +102,21 @@ public sealed class PowerShellService : IPowerShellService
             var stdout = await stdoutTask;
             var stderr = await stderrTask;
 
-            var errors = string.IsNullOrEmpty(stderr)
-                ? Array.Empty<string>()
-                : stderr.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var errors = ParseErrors(stderr);
 
             return new PSResult(
+                // Success requires exit 0 AND no REAL diagnostics. The second half was already
+                // here; what was wrong is that `errors` used to include CLIXML transport
+                // scaffolding, so a healthy command that merely emitted a progress record
+                // ("Preparing modules for first use") was reported as a failure - a real
+                // `dotnet build` printing "Build succeeded. 0 Error(s)" came back Success:false.
+                // ParseErrors now drops that scaffolding, so this condition means what it says.
+                //
+                // The exit code alone is NOT sufficient here: this service invokes via
+                // -EncodedCommand, where a non-terminating failure such as an unknown cmdlet
+                // still exits 0 and reports itself only on stderr. Keying Success solely on the
+                // exit code was tried and made `RunAsync_returns_error_for_invalid_command` pass
+                // a genuinely failed command.
                 Success: proc.ExitCode == 0 && errors.Length == 0,
                 Stdout: stdout,
                 Stderr: stderr,
@@ -183,4 +195,56 @@ public sealed class PowerShellService : IPowerShellService
         _disposed = true;
         _gate.Dispose();
     }
+
+    /// <summary>
+    /// Split PowerShell stderr into diagnostic lines, discarding CLIXML transport scaffolding.
+    /// </summary>
+    /// <remarks>
+    /// With stderr redirected, powershell.exe serialises error AND PROGRESS records as CLIXML: a
+    /// "#&lt; CLIXML" preamble followed by an &lt;Objs&gt; document. Routine progress ("Preparing
+    /// modules for first use") therefore appears on stderr during a completely healthy run, so
+    /// treating any stderr as failure mislabels healthy runs. Keeping the scaffolding in Errors
+    /// also buries real messages under a wall of XML. This filters the TRANSPORT only - anything
+    /// that is not scaffolding is preserved verbatim.
+    /// </remarks>
+    public static string[] ParseErrors(string? stderr)
+    {
+        if (string.IsNullOrEmpty(stderr)) return Array.Empty<string>();
+
+        var results = new List<string>();
+        foreach (var line in stderr.Split((char)10, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            // The "#< CLIXML" preamble is pure transport framing.
+            if (line.StartsWith("#< CLIXML", StringComparison.Ordinal)) continue;
+
+            if (line.StartsWith("<Objs", StringComparison.Ordinal))
+            {
+                // CRITICAL: one <Objs> document carries BOTH progress AND error records, so the
+                // line cannot be dropped wholesale - that discards the actual diagnostics. Pull
+                // out the Error-typed strings and leave the progress records behind.
+                var matches = ErrorRecord.Matches(line);
+                if (matches.Count == 0) continue;   // progress-only document: genuinely noise
+
+                foreach (Match m in matches)
+                {
+                    // PowerShell encodes CR and LF inside the payload as _x000D_ / _x000A_.
+                    var text = m.Groups[1].Value
+                        .Replace("_x000D_", string.Empty, StringComparison.Ordinal)
+                        .Replace("_x000A_", string.Empty, StringComparison.Ordinal);
+                    text = WebUtility.HtmlDecode(text).Trim();
+                    if (text.Length > 0) results.Add(text);
+                }
+                continue;
+            }
+
+            results.Add(line);
+        }
+
+        return results.ToArray();
+    }
+
+    // Error payloads inside a CLIXML <Objs> document appear as <S S="Error">text</S>.
+    private static readonly Regex ErrorRecord =
+        new("<S S=\"Error\">(.*?)</S>", RegexOptions.Compiled | RegexOptions.Singleline);
+
 }

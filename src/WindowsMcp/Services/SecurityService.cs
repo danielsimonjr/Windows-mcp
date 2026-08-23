@@ -49,12 +49,19 @@ public sealed class SecurityService : ISecurityService
     // Single pipeline (survives the -Command - stdin path). Property names match DefenderStatusDto.
     // DateTime fields are forced to ISO 8601 via .ToString('o'): Windows PowerShell 5.1 otherwise
     // serializes them as "\/Date(ms)\/", which System.Text.Json cannot parse into DateTime?.
+        // The `else{$null}` below is NOT redundant. A calculated property whose scriptblock emits
+        // NOTHING serializes as an empty OBJECT {} - not null - and {} cannot convert to DateTime?,
+        // which fails the WHOLE DefenderStatusDto and blanks EVERY field. Found on EVO-X2
+        // 2026-08-23: a machine that had never completed a full scan returned
+        // "could not be converted ... Path: $.FullScanEndTime" and reported nothing, while
+        // security_audit independently confirmed Defender was RUNNING. A tool that renders a parse
+        // failure as an all-null security posture is more dangerous than one that errors outright.
     private const string DefenderScript =
         "Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled,AntivirusEnabled,IsTamperProtected," +
         "BehaviorMonitorEnabled,AntivirusSignatureVersion," +
-        "@{n='AntivirusSignatureLastUpdated';e={if($_.AntivirusSignatureLastUpdated){$_.AntivirusSignatureLastUpdated.ToString('o')}}}," +
-        "@{n='QuickScanEndTime';e={if($_.QuickScanEndTime){$_.QuickScanEndTime.ToString('o')}}}," +
-        "@{n='FullScanEndTime';e={if($_.FullScanEndTime){$_.FullScanEndTime.ToString('o')}}} " +
+        "@{n='AntivirusSignatureLastUpdated';e={if($_.AntivirusSignatureLastUpdated){$_.AntivirusSignatureLastUpdated.ToString('o')}else{$null}}}," +
+        "@{n='QuickScanEndTime';e={if($_.QuickScanEndTime){$_.QuickScanEndTime.ToString('o')}else{$null}}}," +
+        "@{n='FullScanEndTime';e={if($_.FullScanEndTime){$_.FullScanEndTime.ToString('o')}else{$null}}} " +
         "| ConvertTo-Json";
 
     // Each probe is isolated in its own try/catch so one missing cmdlet or permission failure

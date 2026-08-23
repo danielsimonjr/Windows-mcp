@@ -1,4 +1,4 @@
-## [Unreleased]
+## [0.8.0] - 2026-08-23
 
 ### Changed
 
@@ -30,6 +30,63 @@
     remove. Exposing this server over HTTP is a separate change with a security dimension - it
     would put a network listener in front of tools that run PowerShell and terminate processes -
     and is deliberately NOT part of this commit.
+
+### Fixed
+
+- **`powershell` reported SUCCESSFUL commands as failures.** `Success` required `ExitCode == 0`
+  **and** an empty stderr, but with stderr redirected PowerShell serialises *progress* records to
+  it as CLIXML ("Preparing modules for first use"). A real `dotnet build` printing
+  "Build succeeded. 0 Warning(s) 0 Error(s)" and exiting 0 came back `Success:false`. A wrapper
+  that calls a green build failed teaches its caller to ignore the verdict, which is worse than
+  having no verdict.
+  - **The first fix was WRONG and the tests caught it.** Keying `Success` on the exit code alone
+    made a genuinely failed command report success: this service invokes via `-EncodedCommand`,
+    where a non-terminating failure (unknown cmdlet) still **exits 0** and announces itself only
+    on stderr. The exit code is not sufficient here.
+  - **Root cause, one level down:** a single CLIXML `<Objs>` document carries **both** progress and
+    error records on one line, so filtering `<Objs>` lines wholesale discards the real diagnostics.
+    `ParseErrors` now EXTRACTS `<S S="Error">` payloads, decodes the `_x000D_`/`_x000A_`
+    placeholders and HTML entities, and drops progress-only documents. Errors are now readable
+    text instead of a wall of XML - strictly better than before the bug existed.
+
+- **`defender_status` returned an all-null security posture on any machine that had never
+  completed a full scan.** Found by the EVO-X2 agent, not here. `Get-MpComputerStatus` is projected
+  through calculated properties, and a scriptblock that emits NOTHING serialises as an empty
+  OBJECT `{}` - not `null`. `{}` cannot bind to `DateTime?`, so deserialisation of the WHOLE
+  `DefenderStatusDto` failed and every field came back null.
+  - Reported as `"could not be converted ... Path: $.FullScanEndTime"`, while `security_audit`
+    independently confirmed `DefenderRunning=true`. **A tool that renders a parse failure as an
+    all-null security posture is more dangerous than one that errors outright** - the output is
+    indistinguishable from "Defender is off".
+  - Fixed on **all three** affected properties (`AntivirusSignatureLastUpdated`,
+    `QuickScanEndTime`, `FullScanEndTime`), not only the one that was hit; any of them being
+    absent had the same total effect.
+
+### Verified
+
+- **The shipped `bundle/WindowsMcp.exe` was EXECUTED, not assumed** (0.7.1 shipped a stale binary;
+  that is the failure mode this check exists for). A real stdio session against the committed
+  artifact reports `serverInfo {name: Windows-mcp, version: 0.8.0}` and enumerates **63 tools**.
+- **The 2026-07-28 protocol is genuinely live in that binary**, evidenced by behaviour rather than
+  by the package reference: `server/discover` (mandatory only in the new revision) is recognised
+  and correctly *refuses* a call lacking per-request metadata -
+  "requires per-request metadata declaring a supported protocol version" - then answers once
+  `io.modelcontextprotocol/protocolVersion` is supplied. `tools/list` returns the new required
+  `resultType: "complete"` plus the new `CacheableResult` fields (`ttlMs`, `cacheScope`).
+- **Tests: 243 passed / 247 total.** The 4 failures are environmental and documented: three need an
+  interactive desktop (UIPI blocks simulated input; `CopyFromScreen` gets an invalid handle), and
+  `UIAutomationServiceTests.FindElementAsync_finds_notepad_text_area` failed only in the full run
+  because a leftover Notepad contended with the fixture's foregrounding - **proven green when run
+  in isolation (3/3)**, so it is flake, not regression.
+
+### Not done, deliberately
+
+- **No HTTP transport.** Statelessness is a property of Streamable HTTP; a stdio server is a local
+  child process with no session to remove, so the upgrade alone does not make this server
+  remotely reachable. Putting a network listener in front of tools that run PowerShell and
+  terminate processes is a security decision for the operator, not a side effect of a dependency
+  bump.
+
 
 ## [0.7.2] - 2026-08-16
 
