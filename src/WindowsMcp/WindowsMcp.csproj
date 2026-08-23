@@ -10,7 +10,7 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.*" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.*" />
     <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.3.*" PrivateAssets="all" />
-    <PackageReference Include="ModelContextProtocol" Version="1.0.*" />
+    <PackageReference Include="ModelContextProtocol" Version="2.2.*" />
     <PackageReference Include="ReverseMarkdown" Version="4.*" />
     <PackageReference Include="SkiaSharp" Version="3.*" />
     <PackageReference Include="System.Diagnostics.EventLog" Version="9.*" />

@@ -1,3 +1,36 @@
+## [Unreleased]
+
+### Changed
+
+- **Upgrade `ModelContextProtocol` 1.0.0 -> 2.2.0, adopting the MCP 2026-07-28 specification.**
+  The 2026-07-28 revision makes MCP stateless: it removes protocol-level sessions and the
+  `Mcp-Session-Id` header, drops the `initialize`/`notifications/initialized` handshake in favour
+  of per-request `_meta` (`io.modelcontextprotocol/protocolVersion`,
+  `io.modelcontextprotocol/clientCapabilities`), adds a mandatory `server/discover` RPC, and
+  introduces Multi Round-Trip Requests. The C# SDK 2.0 line implements that revision, so the
+  protocol work comes from the SDK rather than from this repo.
+  - **No source changes were required.** The build is clean at 0 warnings / 0 errors across a
+    major version bump, because this server only consumes `AddMcpServer`,
+    `WithRequestFilters`/`AddCallToolFilter` and `WithStdioServerTransport`, none of which changed
+    shape. The deprecated features (Roots, Sampling, Logging) were never used here.
+  - **The upgrade is verified as HAVING TAKEN EFFECT, not merely as building.** A successful build
+    proves nothing about which package resolved: `project.assets.json` reports
+    `ModelContextProtocol/2.2.0` and `ModelContextProtocol.Core/2.2.0`, and the emitted
+    `ModelContextProtocol.dll` reports `FileVersion 2.2.0.0`,
+    `ProductVersion 2.2.0+6fa3825973949a9c4f0cd8af344e15a8db09dc35`.
+  - **No regression.** Tests before: 240 passed / 3 failed / 243 total. After: 240 passed /
+    3 failed / 243 total, and the three failures are the SAME tests by name -
+    `InputServiceTests.ClickAsync...`, `InputServiceTests.TypeAsync...`,
+    `ScreenshotServiceTests.CaptureAsync...` - i.e. the documented environmental set that needs an
+    interactive desktop (UIPI blocks simulated input; `CopyFromScreen` gets an invalid handle).
+    The baseline was measured on this machine BEFORE the bump rather than assumed from the
+    CHANGELOG, so "unchanged" is a comparison and not a claim.
+  - **STDIO transport is unchanged and remains the default.** Statelessness is a property of the
+    Streamable HTTP transport; a stdio server is a local child process and has no session to
+    remove. Exposing this server over HTTP is a separate change with a security dimension - it
+    would put a network listener in front of tools that run PowerShell and terminate processes -
+    and is deliberately NOT part of this commit.
+
 ## [0.7.2] - 2026-08-16
 
 ### Fixed
