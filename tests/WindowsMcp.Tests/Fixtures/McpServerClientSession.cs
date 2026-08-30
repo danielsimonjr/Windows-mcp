@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+using System.Collections.Concurrent;
 
 namespace WindowsMcp.Tests.Fixtures;
 
@@ -18,6 +19,7 @@ public sealed class McpServerClientSession : IAsyncDisposable
 
     public static async Task<McpServerClientSession> StartAsync(CancellationToken ct = default)
     {
+        var stderrLines = new ConcurrentQueue<string>();
         var transport = new StdioClientTransport(
             new StdioClientTransportOptions
             {
@@ -33,28 +35,37 @@ public sealed class McpServerClientSession : IAsyncDisposable
                     "--no-restore",
                 ],
                 ShutdownTimeout = TimeSpan.FromSeconds(5),
-                StandardErrorLines = _ => { },
+                StandardErrorLines = stderrLines.Enqueue,
             },
             NullLoggerFactory.Instance);
 
-        var client = await McpClient.CreateAsync(
-            transport,
-            new McpClientOptions
-            {
-                ProtocolVersion = Mcp20Protocol.Version,
-                ClientInfo = new Implementation
+        try
+        {
+            var client = await McpClient.CreateAsync(
+                transport,
+                new McpClientOptions
                 {
-                    Name = "WindowsMcp.Tests",
-                    Version = "1.0.0",
+                    ProtocolVersion = Mcp20Protocol.Version,
+                    ClientInfo = new Implementation
+                    {
+                        Name = "WindowsMcp.Tests",
+                        Version = "1.0.0",
+                    },
+                    Capabilities = new ClientCapabilities(),
+                    InitializationTimeout = TimeSpan.FromSeconds(20),
+                    DiscoverProbeTimeout = TimeSpan.FromSeconds(20),
                 },
-                Capabilities = new ClientCapabilities(),
-                InitializationTimeout = TimeSpan.FromSeconds(20),
-                DiscoverProbeTimeout = TimeSpan.FromSeconds(20),
-            },
-            NullLoggerFactory.Instance,
-            ct);
+                NullLoggerFactory.Instance,
+                ct);
 
-        return new McpServerClientSession(transport, client);
+            return new McpServerClientSession(transport, client);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"failed to establish an MCP client session.{FormatStderr(stderrLines)}",
+                ex);
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -64,5 +75,12 @@ public sealed class McpServerClientSession : IAsyncDisposable
 
         if (_transport is IAsyncDisposable asyncTransport)
             await asyncTransport.DisposeAsync();
+    }
+
+    private static string FormatStderr(ConcurrentQueue<string> stderrLines)
+    {
+        return stderrLines.IsEmpty
+            ? string.Empty
+            : $"{Environment.NewLine}stderr:{Environment.NewLine}{string.Join(Environment.NewLine, stderrLines)}";
     }
 }

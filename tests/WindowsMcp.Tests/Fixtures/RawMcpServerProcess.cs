@@ -6,11 +6,21 @@ namespace WindowsMcp.Tests.Fixtures;
 public sealed class RawMcpServerProcess : IAsyncDisposable
 {
     private readonly Process _process;
+    private readonly List<string> _stderrLines = [];
+    private readonly Task _stderrPump;
 
     private RawMcpServerProcess(Process process)
     {
         _process = process;
         _process.StandardInput.AutoFlush = true;
+        _stderrPump = Task.Run(async () =>
+        {
+            while (await _process.StandardError.ReadLineAsync() is { } line)
+            {
+                lock (_stderrLines)
+                    _stderrLines.Add(line);
+            }
+        });
     }
 
     public static async Task<RawMcpServerProcess> StartAsync()
@@ -44,17 +54,30 @@ public sealed class RawMcpServerProcess : IAsyncDisposable
     {
         await _process.StandardInput.WriteLineAsync(request.ToJsonString());
 
-        var responseTask = _process.StandardOutput.ReadLineAsync();
-        var completed = await Task.WhenAny(responseTask, Task.Delay(timeout ?? TimeSpan.FromSeconds(20)));
-        if (completed != responseTask)
-            throw new TimeoutException("timed out waiting for a JSON-RPC response from the Windows-mcp test server");
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(20));
+        var expectedId = request["id"]?.ToJsonString();
 
-        var line = await responseTask;
-        if (string.IsNullOrWhiteSpace(line))
-            throw new InvalidOperationException("the Windows-mcp test server returned an empty stdout line");
+        while (true)
+        {
+            var remaining = deadline - DateTime.UtcNow;
+            if (remaining <= TimeSpan.Zero)
+                throw new TimeoutException($"timed out waiting for a JSON-RPC response from the Windows-mcp test server.{FormatStderr()}");
 
-        return JsonNode.Parse(line)?.AsObject()
-            ?? throw new InvalidOperationException($"stdout was not a JSON object: {line}");
+            var responseTask = _process.StandardOutput.ReadLineAsync();
+            var completed = await Task.WhenAny(responseTask, Task.Delay(remaining));
+            if (completed != responseTask)
+                throw new TimeoutException($"timed out waiting for a JSON-RPC response from the Windows-mcp test server.{FormatStderr()}");
+
+            var line = await responseTask;
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+
+            var message = JsonNode.Parse(line)?.AsObject()
+                ?? throw new InvalidOperationException($"stdout was not a JSON object: {line}{FormatStderr()}");
+
+            if (expectedId is null || message["id"]?.ToJsonString() == expectedId)
+                return message;
+        }
     }
 
     private async Task InitializeAsync()
@@ -98,7 +121,18 @@ public sealed class RawMcpServerProcess : IAsyncDisposable
         }
         finally
         {
+            try { await _stderrPump.WaitAsync(TimeSpan.FromSeconds(1)); } catch { }
             _process.Dispose();
+        }
+    }
+
+    private string FormatStderr()
+    {
+        lock (_stderrLines)
+        {
+            return _stderrLines.Count == 0
+                ? string.Empty
+                : $"{Environment.NewLine}stderr:{Environment.NewLine}{string.Join(Environment.NewLine, _stderrLines)}";
         }
     }
 }
