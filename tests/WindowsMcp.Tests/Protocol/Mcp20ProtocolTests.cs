@@ -75,7 +75,7 @@ public class Mcp20ProtocolTests
         {
             var write = await session.Client.CallToolAsync(
                 "file_write",
-                new Dictionary<string, object>
+                new Dictionary<string, object?>
                 {
                     ["path"] = path,
                     ["content"] = "hello from mcp20",
@@ -88,7 +88,7 @@ public class Mcp20ProtocolTests
 
             var read = await session.Client.CallToolAsync(
                 "file_read",
-                new Dictionary<string, object>
+                new Dictionary<string, object?>
                 {
                     ["path"] = path,
                 });
@@ -114,7 +114,7 @@ public class Mcp20ProtocolTests
 
         var result = await session.Client.CallToolAsync(
             "file_write",
-            new Dictionary<string, object>
+            new Dictionary<string, object?>
             {
                 ["path"] = Path.Combine(Path.GetTempPath(), $"windows-mcp-no-confirm-{Guid.NewGuid():N}.txt"),
                 ["content"] = "missing confirm",
