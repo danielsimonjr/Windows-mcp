@@ -1,6 +1,8 @@
 using System.Text.Json.Nodes;
+using System.Reflection;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
 using WindowsMcp.Tests.Fixtures;
 using Xunit;
 
@@ -40,7 +42,7 @@ public class Mcp20ProtocolTests
         var result = await session.Client.ListToolsAsync(new ListToolsRequestParams());
 
         result.ResultType.Should().Be("complete");
-        result.Tools.Should().HaveCount(63);
+        result.Tools.Should().HaveCount(ExpectedToolCount());
 
         var fileRead = result.Tools.Should().ContainSingle(t => t.Name == "file_read").Subject;
         fileRead.Description.Should().NotBeNullOrWhiteSpace();
@@ -158,5 +160,13 @@ public class Mcp20ProtocolTests
         return tool.InputSchema.TryGetProperty("required", out var required)
             ? required.EnumerateArray().Select(static e => e.GetString() ?? string.Empty).ToArray()
             : [];
+    }
+
+    private static int ExpectedToolCount()
+    {
+        return typeof(Program).Assembly.GetTypes()
+            .Where(static t => t.GetCustomAttributes(typeof(McpServerToolTypeAttribute), inherit: false).Length != 0)
+            .SelectMany(static t => t.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+            .Count(static m => m.GetCustomAttributes(typeof(McpServerToolAttribute), inherit: false).Length != 0);
     }
 }

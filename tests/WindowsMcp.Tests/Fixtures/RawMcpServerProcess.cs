@@ -13,7 +13,7 @@ public sealed class RawMcpServerProcess : IAsyncDisposable
         _process.StandardInput.AutoFlush = true;
     }
 
-    public static Task<RawMcpServerProcess> StartAsync()
+    public static async Task<RawMcpServerProcess> StartAsync()
     {
         var startInfo = new ProcessStartInfo("dotnet")
         {
@@ -35,7 +35,9 @@ public sealed class RawMcpServerProcess : IAsyncDisposable
         var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException("failed to start Windows-mcp test server process");
 
-        return Task.FromResult(new RawMcpServerProcess(process));
+        var server = new RawMcpServerProcess(process);
+        await server.InitializeAsync();
+        return server;
     }
 
     public async Task<JsonObject> SendRequestAsync(JsonObject request, TimeSpan? timeout = null)
@@ -53,6 +55,31 @@ public sealed class RawMcpServerProcess : IAsyncDisposable
 
         return JsonNode.Parse(line)?.AsObject()
             ?? throw new InvalidOperationException($"stdout was not a JSON object: {line}");
+    }
+
+    private async Task InitializeAsync()
+    {
+        var response = await SendRequestAsync(new JsonObject
+        {
+            ["jsonrpc"] = "2.0",
+            ["id"] = 0,
+            ["method"] = "initialize",
+            ["params"] = new JsonObject
+            {
+                ["protocolVersion"] = Mcp20Protocol.Version,
+                ["capabilities"] = new JsonObject(),
+                ["clientInfo"] = new JsonObject
+                {
+                    ["name"] = "WindowsMcp.Tests",
+                    ["version"] = "1.0.0",
+                },
+            },
+        });
+
+        if (response["result"] is null)
+            throw new InvalidOperationException($"initialize failed: {response.ToJsonString()}");
+
+        await _process.StandardInput.WriteLineAsync("""{"jsonrpc":"2.0","method":"notifications/initialized"}""");
     }
 
     public async ValueTask DisposeAsync()
