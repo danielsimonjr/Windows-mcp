@@ -122,8 +122,10 @@ public class StartupReportRendererTests
 
         text.Should().Contain("SUMMARY");
         text.Should().Contain("== Section counts ==").And.Contain("run=2");
-        text.Should().Contain("== Flagged: untrusted or missing target (1) ==");
-        text.Should().Contain("Sketchy").And.Contain("UNTRUSTED");
+        text.Should().Contain("== Flagged MEDIUM untrusted-third-party (1) ==");
+        text.Should().Contain("Sketchy").And.Contain("untrusted-third-party");
+        text.Should().NotContain("== Flagged: untrusted or missing target (1) ==");
+        text.Should().NotContain("UNTRUSTED");
         text.Should().NotContain("Trusted = good.exe");   // trusted entries are omitted from the summary
     }
 
@@ -139,7 +141,10 @@ public class StartupReportRendererTests
 
         var text = StartupReportRenderer.RenderSummary(dto);
 
-        text.Should().Contain("== Flagged: untrusted or missing target (0) ==");
+        text.Should().Contain("== Flagged HIGH missing-target / persistence hooks (0) ==");
+        text.Should().Contain("== Flagged MEDIUM untrusted-third-party (0) ==");
+        text.Should().Contain("== Flagged LOW ms-file-missing (0) ==");
+        text.Should().NotContain("== Flagged: untrusted or missing target (0) ==");
         text.Should().NotContain("ComHandlerTask");
     }
 }

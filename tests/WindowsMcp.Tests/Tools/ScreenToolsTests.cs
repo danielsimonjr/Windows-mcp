@@ -27,4 +27,32 @@ public class ScreenToolsTests
         result.Should().Contain(Convert.ToBase64String(pngBytes));
         result.Should().Contain("100");
     }
+
+    [Fact]
+    public async Task Ocr_dispatches()
+    {
+        var ocr = new Mock<IOcrService>();
+        ocr.Setup(s => s.ExtractTextAsync(null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync("hello world");
+        var tools = new ScreenTools(new Mock<IScreenshotService>().Object, ocr.Object);
+
+        var result = await tools.Ocr(null);
+
+        result.Should().Be("hello world");
+        ocr.Verify(s => s.ExtractTextAsync(null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData("1,2,3")]
+    [InlineData("a,b,c,d")]
+    [InlineData("0,0,-1,10")]
+    public async Task Screenshot_rejects_invalid_region(string region)
+    {
+        var shot = new Mock<IScreenshotService>();
+        var tools = new ScreenTools(shot.Object, new Mock<IOcrService>().Object);
+
+        var act = () => tools.Screenshot(region);
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*region*");
+        shot.Verify(s => s.CaptureAsync(It.IsAny<ScreenRegion?>(), It.IsAny<ImageFormat>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
 }

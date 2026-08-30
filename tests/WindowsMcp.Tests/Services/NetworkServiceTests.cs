@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Moq;
 using WindowsMcp.Abstractions;
+using WindowsMcp.Abstractions.Models;
 using WindowsMcp.Services;
 using Xunit;
 
@@ -80,9 +81,49 @@ public class NetworkServiceTests
 
     [Fact]
     [Trait("Category", "Unit")]
-    public async Task GetWifiAsync_returns_the_managed_api_placeholder()
+    public void ParseWifi_reads_ssid_signal_and_state()
     {
-        var wifi = await Make().GetWifiAsync();
-        wifi.Status.Should().Be("ManagedAPIRequired");
+        var wifi = NetworkService.ParseWifi(
+            """
+            There is 1 interface on the system:
+
+                Name                   : Wi-Fi
+                Description            : Intel(R) Wireless-AC
+                State                  : connected
+                SSID                   : TestNet
+                BSSID                  : aa:bb:cc:dd:ee:ff
+                Signal                 : 87%
+                Profile                : TestNet
+            """);
+
+        wifi.Ssid.Should().Be("TestNet");
+        wifi.SignalStrength.Should().Be(87);
+        wifi.Status.Should().Be("connected");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task GetWifiAsync_parses_mocked_netsh_stdout()
+    {
+        var ps = new Mock<IPowerShellService>();
+        ps.Setup(s => s.RunAsync("netsh wlan show interfaces", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PSResult(
+                Success: true,
+                Stdout: """
+                    State                  : connected
+                    SSID                   : CafeWifi
+                    BSSID                  : 11:22:33:44:55:66
+                    Signal                 : 42%
+                    """,
+                Stderr: "",
+                ExitCode: 0,
+                Errors: Array.Empty<string>()));
+
+        var wifi = await Make(ps.Object).GetWifiAsync();
+
+        wifi.Ssid.Should().Be("CafeWifi");
+        wifi.SignalStrength.Should().Be(42);
+        wifi.Status.Should().Be("connected");
+        ps.Verify(s => s.RunAsync("netsh wlan show interfaces", It.IsAny<CancellationToken>()), Times.Once);
     }
 }

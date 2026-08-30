@@ -104,4 +104,17 @@ public class RegistryServiceTests : IDisposable
         Func<Task> act = () => svc.SetAsync("HKCU", _ns, "BadKind", "x", "NotARealKind");
         await act.Should().ThrowAsync<ArgumentException>().WithMessage("*kind*");
     }
+
+    [Fact]
+    public async Task SetAsync_blocks_ifeo_path_under_hkcu()
+    {
+        var svc = new RegistryService();
+        var act = () => svc.SetAsync(
+            "HKCU",
+            @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\foo",
+            "Debugger",
+            "evil.exe",
+            "String");
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*blocked*");
+    }
 }

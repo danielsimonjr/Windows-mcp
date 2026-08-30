@@ -64,4 +64,14 @@ public sealed class WatchServiceTests : IDisposable
         var s = _svc.Start(_dir, null, false);
         s.Filter.Should().Be("*");
     }
+
+    [Fact]
+    public void Start_beyond_MaxSessions_throws()
+    {
+        for (var i = 0; i < WatchService.MaxSessions; i++)
+            _svc.Start(_dir, null, false);
+
+        var act = () => _svc.Start(_dir, null, false);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*watch sessions*");
+    }
 }

@@ -35,10 +35,10 @@ public class WmiServiceTests
     }
 
     [Theory]
-    [InlineData("Win32_Process; DROP TABLE", null)]
-    [InlineData("Win32_Process", "root\\cimv2; evil")]
-    [InlineData("Win32_Process", null, "Name='x'; DELETE FROM Win32_Process")]
-    public void ValidateQuery_rejects_injection_patterns(string className, string? ns = "root\\cimv2", string? where = null)
+    [InlineData("Win32_Process; DROP TABLE", "root\\cimv2", null)]
+    [InlineData("Win32_Process", "root\\cimv2; evil", null)]
+    [InlineData("Win32_Process", "root\\cimv2", "Name='x'; DELETE FROM Win32_Process")]
+    public void ValidateQuery_rejects_injection_patterns(string className, string? ns, string? where)
     {
         var act = () => WmiService.ValidateQuery(className, ns, where);
         act.Should().Throw<ArgumentException>();
