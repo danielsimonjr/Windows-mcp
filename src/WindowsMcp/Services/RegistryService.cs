@@ -59,6 +59,7 @@ public sealed class RegistryService : IRegistryService
     public Task SetAsync(string hive, string path, string valueName, object data, string kind, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        RegistryPolicy.ThrowIfSensitiveWrite(hive, path);
         var root = ResolveHive(hive);
         using var key = root.CreateSubKey(path, writable: true)
             ?? throw new InvalidOperationException($"Cannot create or open key: {hive}\\{path}");

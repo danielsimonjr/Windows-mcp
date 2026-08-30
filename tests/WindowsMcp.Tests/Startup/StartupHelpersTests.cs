@@ -147,4 +147,12 @@ public class StartupReportRendererTests
         text.Should().NotContain("== Flagged: untrusted or missing target (0) ==");
         text.Should().NotContain("ComHandlerTask");
     }
+
+    [Theory]
+    [InlineData(@"C:\Windows\System32\svchost.exe", true)]
+    [InlineData(@"C:\Windows\SysWOW64\foo.dll", true)]
+    [InlineData(@"C:\Users\x\AppData\Roaming\evil.exe", false)]
+    [InlineData(null, false)]
+    public void LooksLikeMicrosoftPath_classifies_system_paths(string? path, bool expected)
+        => StartupReportRenderer.LooksLikeMicrosoftPath(path).Should().Be(expected);
 }

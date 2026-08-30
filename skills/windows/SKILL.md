@@ -31,7 +31,7 @@ Do NOT use this skill for:
 
 **Default to the MCP tool.** It is faster than a PowerShell cold-start, returns structured JSON instead of text to parse, and runs unelevated in one consistent place. Reach for raw PowerShell only when none of the 63 tools express what's needed.
 
-**Fall back to the `powershell` tool** only for one-off scripting the 63 tools don't cover. Gotcha: the `powershell` tool's stdin can arrive empty — pass the script via a temp `.ps1` file and invoke that, rather than piping a heredoc or inline multi-line string.
+**Fall back to the `powershell` tool** only for one-off scripting the 63 tools don't cover. Requires `confirm:true`. High-risk patterns (IEX, Start-Process, disk wipe, nested `-EncodedCommand`) are blocked. Prefer a dedicated MCP tool over raw PowerShell when one exists.
 
 The MCP server **runs unelevated**. Admin-only operations — `registry_set` under `HKLM`, `service` start/stop, some `scheduled_task` actions — can return access-denied. Recognize that signature and surface it to the user instead of retrying blindly; the skill cannot grant elevation it doesn't have.
 
@@ -128,7 +128,7 @@ Locate the file(s) first, then layer on metadata, a hash suitable for IOC/VirusT
 
 ## Safety rails & gotchas
 
-- **Confirm before destructive tools:** `registry_set`, `service`, `scheduled_task`, `power_action`, `file_write`, `file_manage`, `firewall`. Each of these is gated behind a `confirm: true` parameter on the write/destructive path — treat that gate as a place to pause and get user sign-off, not just a required field to fill in. Run the read-only counterpart first: `registry_get` before `registry_set`; `process_inspect` before killing; `service` (status/list) before start/stop.
+- **Confirm before destructive tools:** `registry_set`, `service` (start/stop/restart), `scheduled_task` (run/create/delete), `power_action`, `file_write`, `file_manage` (copy/move/delete), `archive`, `firewall`, `powershell`, `start_process`, `launch`, and `env` when `include_secrets:true`. Each of these is gated behind a `confirm: true` parameter on the write/destructive path — treat that gate as a place to pause and get user sign-off, not just a required field to fill in. Run the read-only counterpart first: `registry_get` before `registry_set`; `process_inspect` before killing; `service` (status/list) before start/stop.
 - **`storage_health` can wedge on external / USB drives.** Its default mode is fast and never wakes sleeping drives, but `include_usage: true` wakes sleeping/USB drives to collect SMART data — scope to internal disks by default, or warn the user before running it with `include_usage: true` against removable media.
 - **Runs unelevated.** Admin-only operations (`registry_set` under `HKLM`, `service` start/stop, some `scheduled_task` actions) fail with access-denied. Surface that signature to the user; don't loop retrying.
 - **UIAutomation tools need the target app foregrounded** on an interactive desktop — they fail headless or against a backgrounded window.

@@ -40,23 +40,27 @@ public sealed class FileTools
         return JsonSerializer.Serialize(hits);
     }
 
-    [McpServerTool, Description("File operations: copy, move, delete, list. 'delete' requires confirm:true.")]
+    [McpServerTool, Description("File operations: copy, move, delete, list. copy, move, and delete require confirm:true.")]
     public async Task<string> FileManage(
         [Description("Action: copy, move, delete, list")] string action,
         [Description("Source path")] string src,
         [Description("Destination path (required for copy/move)")] string? dst = null,
-        [Description("Must be true to confirm destructive delete action")] bool confirm = false,
+        [Description("Must be true to confirm copy, move, or delete")] bool confirm = false,
         CancellationToken ct = default)
     {
         switch (action.ToLowerInvariant())
         {
             case "copy":
+                if (!confirm)
+                    throw new ArgumentException("'confirm: true' is required for copy/move/delete");
                 if (string.IsNullOrWhiteSpace(dst))
                     throw new ArgumentException("'copy' requires dst");
                 await _fs.CopyAsync(src, dst, ct);
                 return $"copied '{src}' to '{dst}'";
 
             case "move":
+                if (!confirm)
+                    throw new ArgumentException("'confirm: true' is required for copy/move/delete");
                 if (string.IsNullOrWhiteSpace(dst))
                     throw new ArgumentException("'move' requires dst");
                 await _fs.MoveAsync(src, dst, ct);
@@ -136,13 +140,16 @@ public sealed class FileTools
         return JsonSerializer.Serialize(info);
     }
 
-    [McpServerTool, Description("Zip or unzip an archive. action: zip|unzip.")]
+    [McpServerTool, Description("Zip or unzip an archive. action: zip|unzip. Requires confirm:true.")]
     public async Task<string> Archive(
         [Description("Action: zip or unzip")] string action,
         [Description("Source path (directory to zip, or zip file to unzip)")] string src,
         [Description("Destination path (zip file to create, or directory to extract to)")] string dst,
+        [Description("Must be true to confirm zip or unzip")] bool confirm = false,
         CancellationToken ct = default)
     {
+        if (!confirm)
+            throw new ArgumentException("'confirm: true' is required for zip/unzip");
         switch (action.ToLowerInvariant())
         {
             case "zip":

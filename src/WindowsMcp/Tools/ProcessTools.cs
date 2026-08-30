@@ -136,11 +136,11 @@ public sealed class ProcessTools
         return $"started (pid={pid})";
     }
 
-    [McpServerTool, Description("Manage Windows services. action: list|status|start|stop|restart. stop and restart require confirm:true.")]
+    [McpServerTool, Description("Manage Windows services. action: list|status|start|stop|restart. start, stop, and restart require confirm:true.")]
     public async Task<string> Service(
         [Description("Action: list, status, start, stop, restart")] string action,
         [Description("Service name (required for status/start/stop/restart)")] string? name = null,
-        [Description("Must be true to confirm stop or restart")] bool confirm = false,
+        [Description("Must be true to confirm start, stop, or restart")] bool confirm = false,
         CancellationToken ct = default)
     {
         switch (action.ToLowerInvariant())
@@ -156,6 +156,8 @@ public sealed class ProcessTools
                 return JsonSerializer.Serialize(status);
 
             case "start":
+                if (!confirm)
+                    throw new ArgumentException("'confirm: true' is required for start/stop/restart actions");
                 if (string.IsNullOrWhiteSpace(name))
                     throw new ArgumentException("'start' requires name");
                 await _service.StartAsync(name, ct);

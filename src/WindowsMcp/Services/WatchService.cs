@@ -15,14 +15,22 @@ public sealed class WatchService : IWatchService, IDisposable
         public required EventRingBuffer Buffer { get; init; }
     }
 
+    internal const int MaxSessions = 16;
+
     private readonly Dictionary<string, Session> _sessions = new();
     private readonly object _lock = new();
     private int _seq;
 
     public WatchSession Start(string path, string? filter, bool includeSubdirectories)
     {
+        path = PathPolicy.Normalize(path);
         if (!Directory.Exists(path))
             throw new DirectoryNotFoundException($"Watch path not found: {path}");
+        lock (_lock)
+        {
+            if (_sessions.Count >= MaxSessions)
+                throw new InvalidOperationException($"At most {MaxSessions} watch sessions may run at once");
+        }
 
         var buffer = new EventRingBuffer(2000);
         var fsw = new FileSystemWatcher(path)

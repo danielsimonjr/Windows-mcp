@@ -32,4 +32,34 @@ public class TaskSchedulerServiceTests
         tasks.Should().Contain(t => t.ActionPath != null);   // exec-action extraction works
         tasks.Should().Contain(t => t.Triggers.Length > 0);  // trigger extraction works
     }
+
+    [Theory]
+    [InlineData("daily")]
+    [InlineData("onlogon")]
+    [InlineData("logon")]
+    [InlineData("onboot")]
+    [InlineData("boot")]
+    [InlineData("onidle")]
+    [Trait("Category", "Unit")]
+    public void ParseTrigger_accepts_named_triggers(string trigger)
+    {
+        var t = TaskSchedulerService.ParseTrigger(trigger);
+        t.Should().NotBeNull();
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ParseTrigger_accepts_iso_datetime()
+    {
+        var t = TaskSchedulerService.ParseTrigger("2026-08-30T12:00:00Z");
+        t.Should().BeOfType<Microsoft.Win32.TaskScheduler.TimeTrigger>();
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ParseTrigger_rejects_unknown()
+    {
+        var act = () => TaskSchedulerService.ParseTrigger("whenever");
+        act.Should().Throw<ArgumentException>().WithMessage("*trigger*");
+    }
 }

@@ -54,6 +54,28 @@ public class DiskServiceTests
     }
 
     [Fact]
+    public async Task GetFileTypesAsync_groups_by_extension_sorted_desc()
+    {
+        var fs = new Mock<IFileSystemService>();
+        fs.Setup(f => f.SearchAsync(@"C:\", "*", null, null, false, It.IsAny<CancellationToken>()))
+          .ReturnsAsync(new[]
+          {
+              new FileSearchHit(@"C:\a.dll", 300, DateTime.UtcNow),
+              new FileSearchHit(@"C:\b.dll", 100, DateTime.UtcNow),
+              new FileSearchHit(@"C:\c.txt", 50, DateTime.UtcNow),
+              new FileSearchHit(@"C:\noext", 10, DateTime.UtcNow),
+          });
+
+        var result = await Make(fs).GetFileTypesAsync(@"C:\");
+
+        result[0].Extension.Should().Be(".dll");
+        result[0].Count.Should().Be(2);
+        result[0].SizeBytes.Should().Be(400);
+        result.Should().Contain(e => e.Extension == ".txt" && e.Count == 1);
+        result.Should().Contain(e => e.Extension == "(none)" && e.SizeBytes == 10);
+    }
+
+    [Fact]
     public async Task GetStaleAsync_returns_only_files_older_than_threshold()
     {
         var fs = new Mock<IFileSystemService>();

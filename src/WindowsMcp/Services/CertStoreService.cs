@@ -13,8 +13,15 @@ public sealed class CertStoreService : ICertStoreService
         if (!Enum.TryParse<StoreLocation>(location, ignoreCase: true, out var storeLocation))
             throw new ArgumentException($"Unknown store location '{location}'; expected LocalMachine or CurrentUser");
 
+        var resolvedName = storeName.Equals("CA", StringComparison.OrdinalIgnoreCase)
+            ? StoreName.CertificateAuthority
+            : Enum.TryParse<StoreName>(storeName, ignoreCase: true, out var parsed)
+                ? parsed
+                : throw new ArgumentException(
+                    $"Unknown store name '{storeName}'; expected Root|CA|My|AuthRoot|Disallowed|TrustedPeople|TrustedPublisher|AddressBook");
+
         var now = DateTime.Now;
-        using var store = new X509Store(storeName, storeLocation);
+        using var store = new X509Store(resolvedName, storeLocation);
         store.Open(OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly);
 
         var certs = store.Certificates

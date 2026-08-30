@@ -40,7 +40,9 @@ Windows-MCP follows a four-layer architecture built on .NET 9 with dependency in
 │  IRegistryService · IServiceControlService · IEventLogService               │
 │  ITaskSchedulerService · IProcessService · IWindowService · IWmiService     │
 │  IEnvService · IPowerService · INotificationService · INetworkService       │
-│  IWebService   (32 interfaces total)                                        │
+│  IWebService · IIntegrityService · IUsnService · IWatchService              │
+│  IStartupReportService · IAuthenticodeInspector · ILspEnumerator …          │
+│                    (35 interfaces total)                                    │
 └──────────────────────────────────────────────────────────────────────────────┘
                                     │ implemented by
                                     ▼
@@ -52,7 +54,8 @@ Windows-MCP follows a four-layer architecture built on .NET 9 with dependency in
 │  RegistryService · ServiceControlService · EventLogService                  │
 │  TaskSchedulerService · ProcessService · WindowService · WmiService         │
 │  EnvService · PowerService · NotificationService · NetworkService           │
-│  WebService   (32 singletons — all registered in Program.cs via DI)         │
+│  WebService · IntegrityService · UsnService · WatchService                  │
+│  StartupReportService … (35 singletons — all registered in Program.cs)      │
 └──────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -79,7 +82,7 @@ The MCP SDK (`ModelContextProtocol.Server`) handles all protocol concerns:
 
 - **Transport**: `WithStdioServerTransport()` — reads JSON-RPC from stdin, writes to stdout
 - **Tool Discovery**: `WithToolsFromAssembly()` — source generator discovers all `[McpServerTool]` methods at compile time, registering them with their parameter schemas automatically
-- **Server Info**: `ServerInfo = new() { Name = "Windows-mcp", Version = "0.2.0" }`
+- **Server Info**: `ServerInfo.Name = "Windows-mcp"`, `Version = ServerVersion` (from assembly `<Version>`)
 
 **Critical startup requirements** (both handled in `Program.cs` before host build):
 ```csharp
@@ -125,7 +128,11 @@ public sealed class InputTools
 | `UIAutomationTools` | 8 | `IUIAutomationService` |
 | `FileTools` | 9 | `IFileSystemService`, `IInputService`, `IFileStreamService` |
 | `SystemTools` | 9 | `IWmiService`, `IEnvService`, `IPowerService`, `INotificationService`, `IAudioService`, `ISecurityService`, `IReliabilityService`, `IDriverService` |
-| `WindowTools` | 5 | `IWindowService`, `IProcessService` |
+| `WindowTools` | 5 | `IWindowService` |
+| `StartupTools` | 1 | `IStartupReportService` |
+| `IntegrityTools` | 1 | `IIntegrityService` |
+| `WatchTools` | 1 | `IWatchService` |
+| `UsnTools` | 1 | `IUsnService` |
 | `ProcessTools` | 6 | `IProcessService`, `IServiceControlService`, `ITaskSchedulerService`, `IEventLogService` |
 | `ScreenTools` | 2 | `IScreenshotService`, `IOcrService` |
 | `WebTools` | 2 | `IWebService` |
@@ -141,7 +148,7 @@ public sealed class InputTools
 ### 3. Service Abstraction Layer (`WindowsMcp.Abstractions`)
 
 A separate assembly (`WindowsMcp.Abstractions.csproj`) containing:
-- **32 `IXxxService` interfaces** — define the contract for each domain
+- **35 `IXxxService` interfaces** — define the contract for each domain
 - **Model DTOs** in `WindowsMcp.Abstractions.Models` — records/classes shared between tools and services
 
 The abstraction layer exists so tool classes compile against interfaces, not concrete types. This enforces the dependency inversion principle and makes services independently testable.
@@ -287,6 +294,8 @@ The `Program.cs` static `Main` returns `Task<int>`. The host runs until the MCP 
 ## Security Considerations
 
 1. **Stdio-only transport** — no network port is opened; only the MCP client process can communicate
-2. **PowerShell sandboxing** — `PowerShellService` filters dangerous commands and injection-risk flags before execution (blocklist in implementation)
-3. **DPI-aware coordinates** — `SetProcessDpiAwarenessContext` ensures coordinates are in physical pixels, preventing misclicks on HiDPI displays
-4. **Async-isolated services** — services are never shared across concurrent requests; the MCP SDK serializes tool calls
+2. **PowerShell sandboxing** — `PowerShellService.ValidateCommand()` blocks IEX/Start-Process/disk-wipe/nested `-EncodedCommand`/download cradles; the `powershell` tool also requires `confirm:true`
+3. **Path / registry policy** — device paths (`\\.\`) refused; search capped at 10k hits; IFEO/Winlogon/AppInit/Services/Policies writes blocked
+4. **Web SSRF** — private IPs blocked at resolve + connect time; redirects re-validated; DNS fail-closed; 30s/10 MB caps
+5. **DPI-aware coordinates** — `SetProcessDpiAwarenessContext` ensures coordinates are in physical pixels, preventing misclicks on HiDPI displays
+6. **Async-isolated services** — services are never shared across concurrent requests; the MCP SDK serializes tool calls

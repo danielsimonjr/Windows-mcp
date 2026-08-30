@@ -28,7 +28,7 @@ $notifier.Show($notif)
         await _ps.RunAsync(script, ct);
     }
 
-    private static string EscapeXml(string s) => s
+    internal static string EscapeXml(string s) => s
         .Replace("&", "&amp;")
         .Replace("<", "&lt;")
         .Replace(">", "&gt;")
