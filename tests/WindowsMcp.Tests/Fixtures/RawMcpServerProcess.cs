@@ -54,12 +54,13 @@ public sealed class RawMcpServerProcess : IAsyncDisposable
     {
         await _process.StandardInput.WriteLineAsync(request.ToJsonString());
 
-        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(20));
+        var timeoutBudget = timeout ?? TimeSpan.FromSeconds(20);
         var expectedId = request["id"]?.ToJsonString();
+        var stopwatch = Stopwatch.StartNew();
 
         while (true)
         {
-            var remaining = deadline - DateTime.UtcNow;
+            var remaining = timeoutBudget - stopwatch.Elapsed;
             if (remaining <= TimeSpan.Zero)
                 throw new TimeoutException($"timed out waiting for a JSON-RPC response from the Windows-mcp test server.{FormatStderr()}");
 
@@ -117,6 +118,8 @@ public sealed class RawMcpServerProcess : IAsyncDisposable
         }
         catch
         {
+            lock (_stderrLines)
+                _stderrLines.Add("test cleanup: failed to terminate the Windows-mcp child process cleanly");
             // Best effort cleanup for a test child process.
         }
         finally

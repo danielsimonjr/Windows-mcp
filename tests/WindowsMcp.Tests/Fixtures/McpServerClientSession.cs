@@ -7,11 +7,8 @@ namespace WindowsMcp.Tests.Fixtures;
 
 public sealed class McpServerClientSession : IAsyncDisposable
 {
-    private readonly IClientTransport _transport;
-
-    private McpServerClientSession(IClientTransport transport, McpClient client)
+    private McpServerClientSession(McpClient client)
     {
-        _transport = transport;
         Client = client;
     }
 
@@ -58,10 +55,13 @@ public sealed class McpServerClientSession : IAsyncDisposable
                 NullLoggerFactory.Instance,
                 ct);
 
-            return new McpServerClientSession(transport, client);
+            return new McpServerClientSession(client);
         }
         catch (Exception ex)
         {
+            if (transport is IAsyncDisposable asyncTransport)
+                await asyncTransport.DisposeAsync();
+
             throw new InvalidOperationException(
                 $"failed to establish an MCP client session.{FormatStderr(stderrLines)}",
                 ex);
@@ -72,9 +72,6 @@ public sealed class McpServerClientSession : IAsyncDisposable
     {
         if (Client is IAsyncDisposable asyncClient)
             await asyncClient.DisposeAsync();
-
-        if (_transport is IAsyncDisposable asyncTransport)
-            await asyncTransport.DisposeAsync();
     }
 
     private static string FormatStderr(ConcurrentQueue<string> stderrLines)
