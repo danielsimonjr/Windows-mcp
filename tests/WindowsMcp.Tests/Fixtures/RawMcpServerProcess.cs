@@ -52,10 +52,12 @@ public sealed class RawMcpServerProcess : IAsyncDisposable
 
     public async Task<JsonObject> SendRequestAsync(JsonObject request, TimeSpan? timeout = null)
     {
+        var expectedId = request["id"]?.ToJsonString()
+            ?? throw new ArgumentException("JSON-RPC test requests must include an id", nameof(request));
+
         await _process.StandardInput.WriteLineAsync(request.ToJsonString());
 
         var timeoutBudget = timeout ?? TimeSpan.FromSeconds(20);
-        var expectedId = request["id"]?.ToJsonString();
         var stopwatch = Stopwatch.StartNew();
 
         while (true)
@@ -76,7 +78,7 @@ public sealed class RawMcpServerProcess : IAsyncDisposable
             var message = JsonNode.Parse(line)?.AsObject()
                 ?? throw new InvalidOperationException($"stdout was not a JSON object: {line}{FormatStderr()}");
 
-            if (expectedId is null || message["id"]?.ToJsonString() == expectedId)
+            if (message["id"]?.ToJsonString() == expectedId)
                 return message;
         }
     }
@@ -116,10 +118,11 @@ public sealed class RawMcpServerProcess : IAsyncDisposable
                 await _process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
             }
         }
-        catch
+        catch (Exception ex)
         {
             lock (_stderrLines)
                 _stderrLines.Add("test cleanup: failed to terminate the Windows-mcp child process cleanly");
+            Trace.WriteLine(ex);
             // Best effort cleanup for a test child process.
         }
         finally
