@@ -255,6 +255,32 @@
 
 ## [Unreleased]
 
+### Security
+
+- **`PowerShellService.ValidateCommand`** — block high-risk patterns (Invoke-Expression/IEX,
+  Start-Process, disk wipe, nested `-EncodedCommand`, download cradles) before spawning
+  `powershell.exe`. Architecture docs previously claimed this existed; it now does.
+- **`powershell` tool** — requires `confirm:true` (same friction model as other destructive tools).
+- **`start_process` tool** — requires `confirm:true`.
+- **`scheduled_task` run/create** — require `confirm:true` (delete already did).
+- **`WebService` SSRF hardening** — manual redirect following re-validates each hop; DNS failures
+  fail closed; connect-time private-IP blocking; expanded reserved ranges (100.64/10, 198.18/15);
+  30s timeout and 10 MB response cap.
+- **`WmiService` query validation** — class/namespace/WHERE syntax checks block injection.
+- **`RegistryService.SetAsync`** — unknown `kind` is rejected instead of silently coerced to String.
+
+### Fixed
+
+- **`ToolErrors`** — surfaces `KeyNotFoundException`, `DirectoryNotFoundException`,
+  `NotSupportedException`, and `Win32Exception` to callers (not masked by the MCP SDK).
+- **`watch` poll** — unknown session id throws `KeyNotFoundException` instead of returning an
+  empty array indistinguishable from "no events yet".
+- **`event_log` max** — clamped to 1–1000 at tool and service layers.
+- **`UIAutomationService` element cache** — bounded LRU (10k entries) replaces unbounded growth.
+- **Input validation** — `process_inspect` rejects non-positive PIDs; `audio set` rejects level
+  outside 0–100; `screenshot`/`ocr` region parsing uses `TryParse` with bounds checks;
+  `http_request` validates HTTP method and maps bad `headers_json` to `ArgumentException`.
+
 ### Added
 - **Claude-in-Actions guard foundation (CI / dev infrastructure).** An agent-immutable
   `claude-guard` workflow (`workflow_run`-triggered so it always runs from `main`, a PR cannot edit

@@ -389,10 +389,13 @@ Uses **H.InputSimulator** (`WindowsInput` namespace) which calls `SendInput` dir
 
 ### `PowerShellService`
 
-Executes PowerShell via `System.Diagnostics.Process` with security filtering:
-- Blocks dangerous commands (format, shutdown, del, etc.) and injection-risk flags (-enc, -encodedcommand)
-- Pipes stdin as the script body (avoids command-line length limits)
-- Returns `PowerShellResult(Stdout, Stderr, ExitCode)` to callers
+Executes PowerShell via `System.Diagnostics.Process` (one child at a time behind a serialization gate):
+- `ValidateCommand()` blocklist rejects Invoke-Expression/IEX, Start-Process, disk-wipe cmdlets,
+  nested `-EncodedCommand`, and download cradles before spawn
+- Scripts pass via `-EncodedCommand` (short) or a temp `-File` (long); stdin is redirected and
+  closed so the child cannot consume MCP JSON-RPC bytes
+- Returns `PSResult(Success, Stdout, Stderr, ExitCode, Errors)`; `Success` requires exit 0 and no
+  real stderr diagnostics (CLIXML progress scaffolding is filtered)
 
 ### `ScreenshotService`
 

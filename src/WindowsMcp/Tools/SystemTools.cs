@@ -73,6 +73,8 @@ public sealed class SystemTools
             case "set":
                 if (!level.HasValue)
                     throw new ArgumentException("'set' requires level");
+                if (level.Value is < 0 or > 100)
+                    throw new ArgumentException("'level' must be between 0 and 100");
                 await _audio.SetVolumeAsync(level.Value, ct);
                 return $"volume set to {level.Value}";
 

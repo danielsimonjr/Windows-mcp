@@ -1,7 +1,4 @@
-// TODO (v0.3.0): Element cache (_elementCache) is unbounded by design in v0.2.0.
-// Every ToInfo() call inserts a new entry. LRU eviction tracked for v0.3.0 (Task 22).
-// For now, callers should create short-lived UIAutomationService instances per operation
-// if memory pressure is a concern.
+// Element cache is bounded (LRU, 10k entries) to prevent unbounded memory growth on long sessions.
 
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
@@ -15,10 +12,14 @@ namespace WindowsMcp.Services;
 
 public sealed class UIAutomationService : IUIAutomationService
 {
+    private const int MaxElementCacheEntries = 10_000;
+
     private readonly UIA3Automation _automation;
     private readonly BlockingCollection<Action> _workQueue = new();
     private readonly Thread _staThread;
     private readonly Dictionary<string, AutomationElement> _elementCache = new();
+    private readonly LinkedList<string> _cacheOrder = new();
+    private readonly Dictionary<string, LinkedListNode<string>> _cacheNodes = new();
     private readonly Lock _cacheLock = new();
     private int _nextId;
     private int _disposed;   // 0 = alive, 1 = disposed; treat atomically via Interlocked
@@ -117,6 +118,9 @@ public sealed class UIAutomationService : IUIAutomationService
         {
             id = $"el_{_nextId++}";
             _elementCache[id] = el;
+            var node = _cacheOrder.AddLast(id);
+            _cacheNodes[id] = node;
+            EvictOldestIfNeeded();
         }
         var b = el.BoundingRectangle;
         return new ElementInfo(
@@ -326,7 +330,27 @@ public sealed class UIAutomationService : IUIAutomationService
         {
             if (!_elementCache.TryGetValue(id, out var el))
                 throw new KeyNotFoundException($"Element '{id}' not in cache");
+            TouchCacheEntry(id);
             return el;
+        }
+    }
+
+    private void TouchCacheEntry(string id)
+    {
+        if (!_cacheNodes.TryGetValue(id, out var node)) return;
+        _cacheOrder.Remove(node);
+        _cacheOrder.AddLast(node);
+    }
+
+    private void EvictOldestIfNeeded()
+    {
+        while (_elementCache.Count > MaxElementCacheEntries)
+        {
+            var oldest = _cacheOrder.First
+                ?? throw new InvalidOperationException("Cache order desync");
+            _cacheOrder.RemoveFirst();
+            _cacheNodes.Remove(oldest.Value);
+            _elementCache.Remove(oldest.Value);
         }
     }
 

@@ -62,6 +62,53 @@ public class ProcessToolsTests
     }
 
     [Fact]
+    public async Task StartProcess_requires_confirm_true()
+    {
+        var mock = new Mock<IProcessService>();
+        var tools = MakeTools(process: mock.Object);
+
+        Func<Task> act = () => tools.StartProcess("notepad.exe", confirm: false);
+
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*confirm*");
+        mock.Verify(s => s.StartDetachedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ScheduledTask_run_requires_confirm_true()
+    {
+        var mock = new Mock<ITaskSchedulerService>();
+        var tools = MakeTools(scheduler: mock.Object);
+
+        Func<Task> act = () => tools.ScheduledTask("run", name: "MyTask", confirm: false);
+
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*confirm*");
+        mock.Verify(s => s.RunAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ScheduledTask_create_requires_confirm_true()
+    {
+        var mock = new Mock<ITaskSchedulerService>();
+        var tools = MakeTools(scheduler: mock.Object);
+
+        Func<Task> act = () => tools.ScheduledTask(
+            "create", name: "MyTask", command: "cmd.exe", trigger: "daily", confirm: false);
+
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*confirm*");
+        mock.Verify(s => s.CreateAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessInspect_rejects_non_positive_pid()
+    {
+        var tools = MakeTools();
+        Func<Task> act = () => tools.ProcessInspect(0);
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*positive*");
+    }
+
+    [Fact]
     public async Task Process_orphans_calls_ListLineageAsync_with_orphansOnly_true()
     {
         var mock = new Mock<IProcessService>();

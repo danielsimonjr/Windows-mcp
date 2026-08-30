@@ -9,6 +9,7 @@ public sealed class EventLogService : IEventLogService
     public Task<EventLogEntryDto[]> QueryAsync(string log, string? level, string? source, DateTime? since, int max, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        max = Math.Clamp(max, 1, 1000);
         using var el = new EventLog(log);
         var entries = el.Entries.Cast<EventLogEntry>()
             .Where(e => since == null || e.TimeGenerated >= since.Value)

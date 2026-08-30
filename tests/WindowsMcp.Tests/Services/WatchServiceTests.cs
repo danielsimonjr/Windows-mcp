@@ -43,8 +43,11 @@ public sealed class WatchServiceTests : IDisposable
     }
 
     [Fact]
-    public void Poll_unknown_id_returns_empty()
-        => _svc.Poll("nope", 10).Should().BeEmpty();
+    public void Poll_unknown_id_throws()
+    {
+        var act = () => _svc.Poll("nope", 10);
+        act.Should().Throw<KeyNotFoundException>().WithMessage("*nope*");
+    }
 
     [Fact]
     public void Stop_removes_the_session_and_is_idempotent()

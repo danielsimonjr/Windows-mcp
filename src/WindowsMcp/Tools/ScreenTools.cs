@@ -69,8 +69,11 @@ public sealed class ScreenTools
         var parts = region.Split(',', StringSplitOptions.TrimEntries);
         if (parts.Length != 4)
             throw new ArgumentException($"Invalid region '{region}'; expected 'x,y,w,h'");
-        return new ScreenRegion(
-            int.Parse(parts[0]), int.Parse(parts[1]),
-            int.Parse(parts[2]), int.Parse(parts[3]));
+        if (!int.TryParse(parts[0], out var x) || !int.TryParse(parts[1], out var y)
+            || !int.TryParse(parts[2], out var w) || !int.TryParse(parts[3], out var h))
+            throw new ArgumentException($"Invalid region '{region}'; each component must be an integer");
+        if (w < 0 || h < 0)
+            throw new ArgumentException($"Invalid region '{region}'; width and height must be non-negative");
+        return new ScreenRegion(x, y, w, h);
     }
 }

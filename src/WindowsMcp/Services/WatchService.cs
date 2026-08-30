@@ -56,9 +56,11 @@ public sealed class WatchService : IWatchService, IDisposable
         EventRingBuffer? buffer = null;
         lock (_lock)
         {
-            if (_sessions.TryGetValue(id, out var s)) buffer = s.Buffer;
+            if (!_sessions.TryGetValue(id, out var s))
+                throw new KeyNotFoundException($"Watch session not found: {id}");
+            buffer = s.Buffer;
         }
-        return buffer?.Drain(max <= 0 ? 500 : max) ?? Array.Empty<WatchEvent>();
+        return buffer.Drain(max <= 0 ? 500 : max);
     }
 
     public bool Stop(string id)

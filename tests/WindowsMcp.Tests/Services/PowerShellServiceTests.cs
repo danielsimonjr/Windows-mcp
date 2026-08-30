@@ -142,6 +142,26 @@ public class PowerShellServiceTests
         result.Errors.Should().NotBeEmpty();
     }
 
+    [Theory]
+    [InlineData("Invoke-Expression 'whoami'")]
+    [InlineData("IEX (Get-Content evil.ps1)")]
+    [InlineData("Start-Process notepad")]
+    [InlineData("Stop-Computer -Force")]
+    [InlineData("Format-Volume -DriveLetter C")]
+    [InlineData("powershell -EncodedCommand abc")]
+    public void ValidateCommand_blocks_high_risk_patterns(string command)
+    {
+        var act = () => PowerShellService.ValidateCommand(command);
+        act.Should().Throw<ArgumentException>().WithMessage("*blocked*");
+    }
+
+    [Fact]
+    public void ValidateCommand_allows_benign_queries()
+    {
+        var act = () => PowerShellService.ValidateCommand("Get-Process | Select-Object Name");
+        act.Should().NotThrow();
+    }
+
     [Fact]
     public async Task RunAsync_serialized_calls_preserve_per_caller_output()
     {

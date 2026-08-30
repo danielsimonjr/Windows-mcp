@@ -70,7 +70,8 @@ public sealed class RegistryService : IRegistryService
             "QWord"       => RegistryValueKind.QWord,
             "Binary"      => RegistryValueKind.Binary,
             "MultiString" => RegistryValueKind.MultiString,
-            _             => RegistryValueKind.String   // safe default
+            _             => throw new ArgumentException(
+                $"Unknown registry value kind '{kind}'; expected String|ExpandString|DWord|QWord|Binary|MultiString")
         };
         key.SetValue(valueName, data, rk);
         return Task.CompletedTask;

@@ -26,5 +26,10 @@ internal static class ToolErrors
     /// than an unexpected fault.
     /// </summary>
     public static bool IsCallerFacing(Exception ex) =>
-        ex is ArgumentException or InvalidOperationException;
+        ex is ArgumentException
+            or InvalidOperationException
+            or KeyNotFoundException
+            or DirectoryNotFoundException
+            or NotSupportedException
+            or System.ComponentModel.Win32Exception;
 }

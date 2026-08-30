@@ -23,13 +23,22 @@ public sealed class WebTools
     [McpServerTool, Description("Make an HTTP request to a URL.")]
     public async Task<string> HttpRequest(
         string url,
-        [Description("GET|POST|PUT|DELETE|PATCH")] string method = "GET",
+        [Description("GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS")] string method = "GET",
         [Description("JSON object of header name->value, e.g. {\"Authorization\":\"Bearer ...\"}")] string? headers_json = null,
         [Description("Request body for POST/PUT/PATCH")] string? body = null)
     {
         IDictionary<string, string>? headers = null;
         if (headers_json != null)
-            headers = JsonSerializer.Deserialize<Dictionary<string, string>>(headers_json);
+        {
+            try
+            {
+                headers = JsonSerializer.Deserialize<Dictionary<string, string>>(headers_json);
+            }
+            catch (JsonException ex)
+            {
+                throw new ArgumentException($"Invalid headers_json: {ex.Message}");
+            }
+        }
         var result = await _web.RequestAsync(url, method, headers, body);
         return JsonSerializer.Serialize(result);
     }
