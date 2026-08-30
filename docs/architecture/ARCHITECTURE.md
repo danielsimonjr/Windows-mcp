@@ -83,6 +83,8 @@ The MCP SDK (`ModelContextProtocol.Server`) handles all protocol concerns:
 - **Transport**: `WithStdioServerTransport()` — reads JSON-RPC from stdin, writes to stdout
 - **Tool Discovery**: `WithToolsFromAssembly()` — source generator discovers all `[McpServerTool]` methods at compile time, registering them with their parameter schemas automatically
 - **Server Info**: `ServerInfo.Name = "Windows-mcp"`, `Version = ServerVersion` (from assembly `<Version>`)
+- **Declared surface**: tools-only MCP server; prompts, resources, completions, roots, sampling, logging, and HTTP transport are intentionally not registered by this repo
+- **Conformance check**: `tests/WindowsMcp.Tests/Protocol/Mcp20ProtocolTests.cs` pins the server to the MCP 2026-07-28 surface exercised through the official client SDK
 
 **Critical startup requirements** (both handled in `Program.cs` before host build):
 ```csharp

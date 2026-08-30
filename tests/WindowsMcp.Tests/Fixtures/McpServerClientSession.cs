@@ -1,0 +1,68 @@
+using Microsoft.Extensions.Logging.Abstractions;
+using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
+
+namespace WindowsMcp.Tests.Fixtures;
+
+public sealed class McpServerClientSession : IAsyncDisposable
+{
+    private readonly IClientTransport _transport;
+
+    private McpServerClientSession(IClientTransport transport, McpClient client)
+    {
+        _transport = transport;
+        Client = client;
+    }
+
+    public McpClient Client { get; }
+
+    public static async Task<McpServerClientSession> StartAsync(CancellationToken ct = default)
+    {
+        var transport = new StdioClientTransport(
+            new StdioClientTransportOptions
+            {
+                Name = "Windows-mcp protocol tests",
+                Command = "dotnet",
+                WorkingDirectory = TestRepo.Root(),
+                Arguments =
+                [
+                    "run",
+                    "--project", TestRepo.ServerProjectPath(),
+                    "--framework", "net9.0-windows10.0.19041.0",
+                    "--no-build",
+                    "--no-restore",
+                ],
+                ShutdownTimeout = TimeSpan.FromSeconds(5),
+                StandardErrorLines = _ => { },
+            },
+            NullLoggerFactory.Instance);
+
+        var client = await McpClient.CreateAsync(
+            transport,
+            new McpClientOptions
+            {
+                ProtocolVersion = Mcp20Protocol.Version,
+                ClientInfo = new Implementation
+                {
+                    Name = "WindowsMcp.Tests",
+                    Version = "1.0.0",
+                },
+                Capabilities = new ClientCapabilities(),
+                InitializationTimeout = TimeSpan.FromSeconds(20),
+                DiscoverProbeTimeout = TimeSpan.FromSeconds(20),
+            },
+            NullLoggerFactory.Instance,
+            ct);
+
+        return new McpServerClientSession(transport, client);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Client is IAsyncDisposable asyncClient)
+            await asyncClient.DisposeAsync();
+
+        if (_transport is IAsyncDisposable asyncTransport)
+            await asyncTransport.DisposeAsync();
+    }
+}
