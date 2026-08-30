@@ -255,6 +255,56 @@
 
 ## [Unreleased]
 
+### Security
+
+- **`PowerShellService.ValidateCommand`** — block high-risk patterns (Invoke-Expression/IEX,
+  Start-Process, disk wipe, nested `-EncodedCommand`, download cradles) before spawning
+  `powershell.exe`. Architecture docs previously claimed this existed; it now does.
+- **`powershell` tool** — requires `confirm:true` (same friction model as other destructive tools).
+- **`start_process` tool** — requires `confirm:true`.
+- **`scheduled_task` run/create** — require `confirm:true` (delete already did).
+- **`WebService` SSRF hardening** — manual redirect following re-validates each hop; DNS failures
+  fail closed; connect-time private-IP blocking; expanded reserved ranges (100.64/10, 198.18/15);
+  30s timeout and 10 MB response cap.
+- **`WmiService` query validation** — class/namespace/WHERE syntax checks block injection.
+- **`RegistryService.SetAsync`** — unknown `kind` is rejected instead of silently coerced to String.
+- **`RegistryPolicy`** — writes to IFEO, Winlogon, AppInit_DLLs, Services, and Policies keys are refused.
+- **`PathPolicy`** — device/`\\?\` paths refused; `file_search` capped at 10 000 hits; missing search root rejected.
+- **`launch`, `file_manage` copy/move, `archive`, `service` start** — require `confirm:true`.
+- **`env include_secrets`** — requires `confirm:true` so secret values cannot leak without an explicit gate.
+- **`CertStore`** — store name allowlisted (`Root`/`CA`/`My`/…).
+- **Watch sessions** — hard cap of 16 concurrent `FileSystemWatcher`s.
+
+### Fixed
+
+- **`ToolErrors`** — surfaces `KeyNotFoundException`, `DirectoryNotFoundException`,
+  `NotSupportedException`, and `Win32Exception` to callers (not masked by the MCP SDK).
+- **`watch` poll** — unknown session id throws `KeyNotFoundException` instead of returning an
+  empty array indistinguishable from "no events yet".
+- **`event_log` max** — clamped to 1–1000 at tool and service layers.
+- **`UIAutomationService` element cache** — bounded LRU (10k entries) replaces unbounded growth.
+- **Input validation** — `process_inspect` rejects non-positive PIDs; `audio set` rejects level
+  outside 0–100; `screenshot`/`ocr` region parsing uses `TryParse` with bounds checks;
+  `http_request` validates HTTP method and maps bad `headers_json` to `ArgumentException`.
+- **`AudioService`** — Core Audio `IAudioEndpointVolume` replaces SendKeys; mute is a real setter
+  and `GetAsync` reports the actual muted state.
+- **`NetworkService.GetWifiAsync`** — parses `netsh wlan show interfaces` (no more placeholder).
+- **`scheduled_task` create** — `daily` / `onlogon` / `onboot` / `onidle` triggers work; COM-handler
+  tasks resolve CLSID → InprocServer32 DLL.
+- **`startup_report` summary** — severity tiers: HIGH missing-target / persistence hooks,
+  MEDIUM untrusted-third-party, LOW ms-file-missing.
+- **`UsnService.NormalizeVolume`** — rejects non-letter volume arguments.
+- **Architecture docs** — OVERVIEW / COMPONENTS / ARCHITECTURE / DATAFLOW reconciled to 18 tool
+  classes, 35 services, and current PowerShell / Screenshot / Network / Web / Window behavior.
+
+### Tests
+- Tool-layer coverage for every previously untested class (`WatchTools`, `IntegrityTools`,
+  `UsnTools`, `ShellTools`) and dispatch/validation paths across System/Window/File/Process/
+  Screen/Security/Network/Disk/Input/UIAutomation/Web tools.
+- Service unit tests for PathPolicy, RegistryPolicy, Audio scalar math, EnvService, PowerService
+  unknown-action, Notification XML escape, TaskScheduler named triggers, USN volume normalize,
+  FileSystem copy/move/zip, Disk file-types grouping.
+
 ### Added
 - **Claude-in-Actions guard foundation (CI / dev infrastructure).** An agent-immutable
   `claude-guard` workflow (`workflow_run`-triggered so it always runs from `main`, a PR cannot edit

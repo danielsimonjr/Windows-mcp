@@ -42,6 +42,7 @@ public sealed class PowerShellService : IPowerShellService
     {
         if (_disposed) throw new ObjectDisposedException(nameof(PowerShellService));
         ct.ThrowIfCancellationRequested();
+        ValidateCommand(command);
 
         string? scriptFileToDelete = null;
 
@@ -246,5 +247,43 @@ public sealed class PowerShellService : IPowerShellService
     // Error payloads inside a CLIXML <Objs> document appear as <S S="Error">text</S>.
     private static readonly Regex ErrorRecord =
         new("<S S=\"Error\">(.*?)</S>", RegexOptions.Compiled | RegexOptions.Singleline);
+
+    /// <summary>
+    /// Rejects a small set of high-risk patterns before spawning powershell.exe. Bundled internal
+    /// scripts do not use these constructs; the user-facing <c>powershell</c> tool is the target.
+    /// </summary>
+    internal static void ValidateCommand(string command)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+            throw new ArgumentException("PowerShell command cannot be empty");
+
+        foreach (var (pattern, reason) in BlockedPatterns)
+        {
+            if (pattern.IsMatch(command))
+                throw new ArgumentException($"PowerShell command blocked: {reason}");
+        }
+    }
+
+    // Case-insensitive substring/regex checks for code-injection, process spawn, disk wipe, and
+    // nested-encoded-command evasion. Kept narrow to avoid breaking legitimate Get-*/Set-* cmdlets.
+    private static readonly (Regex Pattern, string Reason)[] BlockedPatterns =
+    [
+        (new(@"\bInvoke-Expression\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled),
+            "Invoke-Expression is not permitted"),
+        (new(@"\bIEX\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled),
+            "IEX (Invoke-Expression alias) is not permitted"),
+        (new(@"\bStart-Process\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled),
+            "Start-Process is not permitted (use start_process tool with confirm:true)"),
+        (new(@"\b(Stop-Computer|Restart-Computer)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled),
+            "system shutdown/reboot via PowerShell is not permitted (use power_action with confirm:true)"),
+        (new(@"\b(Format-Volume|Clear-Disk|Initialize-Disk)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled),
+            "destructive disk operations are not permitted"),
+        (new(@"-EncodedCommand\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled),
+            "nested -EncodedCommand is not permitted"),
+        (new(@"\bNew-Object\s+Net\.WebClient\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled),
+            "download cradle patterns are not permitted"),
+        (new(@"\|\s*IEX\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled),
+            "pipe-to-IEX download cradles are not permitted"),
+    ];
 
 }

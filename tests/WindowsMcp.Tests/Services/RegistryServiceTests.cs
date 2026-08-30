@@ -96,4 +96,25 @@ public class RegistryServiceTests : IDisposable
         // CI runners), so compare case-insensitively rather than by exact casing.
         subs.Should().Contain(k => string.Equals(k, "Software", StringComparison.OrdinalIgnoreCase));
     }
+
+    [Fact]
+    public async Task Set_rejects_unknown_value_kind()
+    {
+        var svc = new RegistryService();
+        Func<Task> act = () => svc.SetAsync("HKCU", _ns, "BadKind", "x", "NotARealKind");
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*kind*");
+    }
+
+    [Fact]
+    public async Task SetAsync_blocks_ifeo_path_under_hkcu()
+    {
+        var svc = new RegistryService();
+        var act = () => svc.SetAsync(
+            "HKCU",
+            @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\foo",
+            "Debugger",
+            "evil.exe",
+            "String");
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*blocked*");
+    }
 }

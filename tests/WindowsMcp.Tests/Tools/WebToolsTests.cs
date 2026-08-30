@@ -54,4 +54,13 @@ public class WebToolsTests : IClassFixture<LocalHttpServerFixture>
         json.Should().Contain("Test");
         mockWeb.VerifyAll();
     }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task HttpRequest_invalid_headers_json_throws()
+    {
+        var tools = new WebTools(new Mock<IWebService>().Object);
+        var act = () => tools.HttpRequest("https://example.com", headers_json: "not-json");
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*headers_json*");
+    }
 }

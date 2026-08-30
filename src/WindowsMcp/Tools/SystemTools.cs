@@ -73,6 +73,8 @@ public sealed class SystemTools
             case "set":
                 if (!level.HasValue)
                     throw new ArgumentException("'set' requires level");
+                if (level.Value is < 0 or > 100)
+                    throw new ArgumentException("'level' must be between 0 and 100");
                 await _audio.SetVolumeAsync(level.Value, ct);
                 return $"volume set to {level.Value}";
 
@@ -160,7 +162,7 @@ public sealed class SystemTools
         [Description("Variable value (for set; null to delete)")] string? value = null,
         [Description("Scope: Process, User, Machine")] string scope = "Process",
         [Description("Must be true to confirm set/delete")] bool confirm = false,
-        [Description("Set true to return raw values for secret-named vars. Default false redacts them as '***REDACTED***'.")] bool include_secrets = false,
+        [Description("Set true (and confirm:true) to return raw values for secret-named vars. Default false redacts them as '***REDACTED***'.")] bool include_secrets = false,
         CancellationToken ct = default)
     {
         var target = scope.ToLowerInvariant() switch
@@ -170,6 +172,9 @@ public sealed class SystemTools
             "machine" => EnvironmentVariableTarget.Machine,
             _         => throw new ArgumentException($"Unknown scope '{scope}'; expected Process|User|Machine")
         };
+
+        if (include_secrets && !confirm)
+            throw new ArgumentException("'confirm: true' is required when include_secrets is true");
 
         switch (action.ToLowerInvariant())
         {

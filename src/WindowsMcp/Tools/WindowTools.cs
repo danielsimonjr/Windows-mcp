@@ -32,10 +32,13 @@ public sealed class WindowTools
         return ok ? $"switched to '{title}'" : $"window '{title}' not found";
     }
 
-    [McpServerTool, Description("Launch an application by name or path. Uses ShellExecute so Start Menu shortcuts and PATH are resolved.")]
+    [McpServerTool, Description("Launch an application by name or path. Uses ShellExecute so Start Menu shortcuts and PATH are resolved. Requires confirm:true.")]
     public async Task<string> Launch(
-        [Description("Application name or executable path to launch")] string app_name)
+        [Description("Application name or executable path to launch")] string app_name,
+        [Description("Must be true to confirm launching a process")] bool confirm = false)
     {
+        if (!confirm)
+            throw new ArgumentException("'confirm: true' is required for launch");
         int pid = await _window.LaunchAsync(app_name);
         return $"launched (pid={pid})";
     }

@@ -101,4 +101,124 @@ public class FileSystemServiceTests : IDisposable
         // The two accessible identical files are still found; the locked one is skipped, not fatal.
         dups.Select(d => d.Path).Should().BeEquivalentTo(new[] { f1, f2 });
     }
+
+    [Fact]
+    public async Task GetInfoAsync_describes_a_file()
+    {
+        var svc = new FileSystemService();
+        var path = Path.Combine(_tmp, "info.txt");
+        await File.WriteAllTextAsync(path, "abcd");
+
+        var info = await svc.GetInfoAsync(path);
+
+        info.IsDirectory.Should().BeFalse();
+        info.Size.Should().Be(4);
+        info.Path.Should().Be(Path.GetFullPath(path));
+    }
+
+    [Fact]
+    public async Task GetInfoAsync_describes_a_directory()
+    {
+        var svc = new FileSystemService();
+        var info = await svc.GetInfoAsync(_tmp);
+
+        info.IsDirectory.Should().BeTrue();
+        info.Path.Should().Be(Path.GetFullPath(_tmp));
+    }
+
+    [Fact]
+    public async Task CopyAsync_writes_destination()
+    {
+        var svc = new FileSystemService();
+        var src = Path.Combine(_tmp, "src.txt");
+        var dst = Path.Combine(_tmp, "dst.txt");
+        await File.WriteAllTextAsync(src, "copied");
+
+        await svc.CopyAsync(src, dst);
+
+        (await File.ReadAllTextAsync(dst)).Should().Be("copied");
+        File.Exists(src).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task MoveAsync_relocates_the_file()
+    {
+        var svc = new FileSystemService();
+        var src = Path.Combine(_tmp, "move-src.txt");
+        var dst = Path.Combine(_tmp, "move-dst.txt");
+        await File.WriteAllTextAsync(src, "moved");
+
+        await svc.MoveAsync(src, dst);
+
+        File.Exists(src).Should().BeFalse();
+        (await File.ReadAllTextAsync(dst)).Should().Be("moved");
+    }
+
+    [Fact]
+    public async Task DeleteAsync_removes_a_file()
+    {
+        var svc = new FileSystemService();
+        var path = Path.Combine(_tmp, "gone.txt");
+        await File.WriteAllTextAsync(path, "x");
+
+        await svc.DeleteAsync(path);
+
+        File.Exists(path).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ListAsync_returns_entries()
+    {
+        var svc = new FileSystemService();
+        var a = Path.Combine(_tmp, "listed-a.txt");
+        await File.WriteAllTextAsync(a, "a");
+
+        var entries = await svc.ListAsync(_tmp);
+
+        entries.Should().Contain(e => e.EndsWith("listed-a.txt", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Zip_then_Unzip_roundtrips_directory_contents()
+    {
+        var svc = new FileSystemService();
+        var srcDir = Path.Combine(_tmp, "zip-src");
+        var dstDir = Path.Combine(_tmp, "zip-dst");
+        var zip = Path.Combine(_tmp, "pack.zip");
+        Directory.CreateDirectory(srcDir);
+        await File.WriteAllTextAsync(Path.Combine(srcDir, "hello.txt"), "roundtrip");
+
+        await svc.ZipAsync(srcDir, zip);
+        await svc.UnzipAsync(zip, dstDir);
+
+        (await File.ReadAllTextAsync(Path.Combine(dstDir, "hello.txt"))).Should().Be("roundtrip");
+    }
+
+    [Fact]
+    public async Task ReadBytesAsync_throws_when_file_exceeds_max()
+    {
+        var svc = new FileSystemService();
+        var path = Path.Combine(_tmp, "big.bin");
+        await File.WriteAllBytesAsync(path, new byte[200]);
+
+        var act = () => svc.ReadBytesAsync(path, 50);
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*exceeds*");
+    }
+
+    [Fact]
+    public async Task Device_path_is_rejected()
+    {
+        var svc = new FileSystemService();
+        var act = () => svc.GetInfoAsync(@"\\.\C:");
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*Device*");
+    }
+
+    [Fact]
+    public async Task Search_on_missing_root_throws()
+    {
+        var svc = new FileSystemService();
+        var missing = Path.Combine(_tmp, "does-not-exist");
+        var act = () => svc.SearchAsync(missing, null, null, null, false);
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*does not exist*");
+    }
 }

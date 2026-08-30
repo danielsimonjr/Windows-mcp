@@ -41,6 +41,22 @@ public class WebServiceTests
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*private IP*");
     }
 
+    [Theory]
+    [InlineData("100.64.0.1")]   // CGNAT / shared address space
+    [InlineData("100.127.255.1")]
+    [InlineData("198.18.0.1")]   // benchmark testing range
+    [InlineData("198.19.255.1")]
+    public void IsPrivateAddress_flags_additional_reserved_ranges(string ip)
+        => WebService.IsPrivateAddress(IPAddress.Parse(ip)).Should().BeTrue();
+
+    [Fact]
+    public async Task ScrapeAsync_rejects_unresolvable_hostname()
+    {
+        var svc = new WebService();
+        var act = () => svc.ScrapeAsync("http://this-host-definitely-does-not-exist-xyz123.invalid/");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*resolve*");
+    }
+
     [Fact]
     public async Task ScrapeAsync_rejects_a_malformed_url()
     {

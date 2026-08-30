@@ -59,6 +59,7 @@ public sealed class RegistryService : IRegistryService
     public Task SetAsync(string hive, string path, string valueName, object data, string kind, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        RegistryPolicy.ThrowIfSensitiveWrite(hive, path);
         var root = ResolveHive(hive);
         using var key = root.CreateSubKey(path, writable: true)
             ?? throw new InvalidOperationException($"Cannot create or open key: {hive}\\{path}");
@@ -70,7 +71,8 @@ public sealed class RegistryService : IRegistryService
             "QWord"       => RegistryValueKind.QWord,
             "Binary"      => RegistryValueKind.Binary,
             "MultiString" => RegistryValueKind.MultiString,
-            _             => RegistryValueKind.String   // safe default
+            _             => throw new ArgumentException(
+                $"Unknown registry value kind '{kind}'; expected String|ExpandString|DWord|QWord|Binary|MultiString")
         };
         key.SetValue(valueName, data, rk);
         return Task.CompletedTask;

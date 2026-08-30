@@ -9,7 +9,7 @@ This document provides detailed documentation for each component in the Windows-
 ## Program.cs — Host and DI Entry Point
 
 ### Purpose
-Configures the .NET Generic Host, registers all 24 services as singletons, and starts the MCP server with stdio transport.
+Configures the .NET Generic Host, registers all 35 services as singletons, and starts the MCP server with stdio transport.
 
 ### Location
 `src/WindowsMcp/Program.cs`
@@ -34,11 +34,11 @@ public static async Task<int> Main(string[] args)
     builder.Logging.ClearProviders();
     builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
     builder.Services.AddSingleton<IInputService, InputService>();
-    // ... (24 services)
+    // ... (35 services)
 
     // 5. Configure MCP server
     builder.Services
-        .AddMcpServer(o => { o.ServerInfo = new() { Name = "Windows-mcp", Version = "0.2.0" }; })
+        .AddMcpServer(o => { o.ServerInfo = new() { Name = "Windows-mcp", Version = ServerVersion }; })
         .WithStdioServerTransport()
         .WithToolsFromAssembly(); // discovers [McpServerTool] at compile time
 
@@ -83,6 +83,9 @@ public static async Task<int> Main(string[] args)
 | `ILspEnumerator` | `LspEnumerator` |
 | `IShortcutResolver` | `ShortcutResolver` |
 | `IStartupReportService` | `StartupReportService` |
+| `IIntegrityService` | `IntegrityService` |
+| `IUsnService` | `UsnService` |
+| `IWatchService` | `WatchService` |
 
 ---
 
@@ -131,15 +134,15 @@ Tool classes are `[McpServerToolType]`-annotated, sealed, and stateless (except 
 ### `WindowTools` — 5 tools
 `src/WindowsMcp/Tools/WindowTools.cs`
 
-**Injected:** `IWindowService`, `IProcessService`
+**Injected:** `IWindowService`
 
 | Method | Description |
 |--------|-------------|
-| `SwitchToWindow` | Focus a window by title pattern |
-| `Window` | Get window position, size, and state |
-| `MultiMonitor` | Enumerate all monitors with resolution and DPI |
-| `Launch` | Launch an application by name |
-| `StartProcess` | Start a detached process |
+| `SwitchToWindow` | Focus a window by exact title |
+| `Window` | minimize/maximize/restore/close a window by title |
+| `MultiMonitor` | Enumerate all monitors with geometry |
+| `Launch` | Launch an application by name (`confirm:true` required) |
+| `Focus` | Alias for SwitchToWindow |
 
 ---
 
@@ -158,7 +161,7 @@ Tool classes are `[McpServerToolType]`-annotated, sealed, and stateless (except 
 | `FileHash` | Compute a file's SHA256/SHA1/MD5 hex digest |
 | `FileStreams` | NTFS alternate data streams + reparse (symlink/junction) target |
 | `FileDialog` | Interact with a native open/save dialog |
-| `Archive` | Create, extract, or list zip/tar archives |
+| `Archive` | Zip or unzip (`confirm:true` required) |
 
 ---
 
@@ -217,7 +220,7 @@ Tool classes are `[McpServerToolType]`-annotated, sealed, and stateless (except 
 
 | Method | Description |
 |--------|-------------|
-| `Screenshot` | Capture full screen or a region; returns base64 PNG |
+| `Screenshot` | Capture full screen or a region; default `output=file` writes `%TEMP%\WindowsMcp` (pass `base64` for inline) |
 | `Ocr` | Extract text from a screen region |
 
 ---
@@ -229,7 +232,7 @@ Tool classes are `[McpServerToolType]`-annotated, sealed, and stateless (except 
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `Powershell` | `(string command)` | Execute PowerShell; returns `{stdout, stderr, exitCode}` JSON |
+| `Powershell` | `(string command, bool confirm=false)` | Execute PowerShell (`confirm:true` required); high-risk patterns blocked |
 
 ---
 
@@ -252,8 +255,8 @@ Tool classes are `[McpServerToolType]`-annotated, sealed, and stateless (except 
 
 | Method | Description |
 |--------|-------------|
-| `Network` | Get adapter info, IP, gateway, DNS |
-| `HttpRequest` | Make an HTTP request (GET/POST/PUT/DELETE) |
+| `Network` | adapters / ports / ping / dns / wifi |
+| `Firewall` | list / add / remove firewall rules (`confirm:true` on add/remove) |
 
 ---
 
@@ -264,8 +267,8 @@ Tool classes are `[McpServerToolType]`-annotated, sealed, and stateless (except 
 
 | Method | Description |
 |--------|-------------|
-| `Scrape` | Fetch a URL and convert HTML to Markdown |
-| `Shortcut` | Create or read a Windows .lnk shell shortcut |
+| `Scrape` | Fetch a public URL and convert HTML to Markdown (SSRF-protected) |
+| `HttpRequest` | HTTP GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS (SSRF-protected) |
 
 ---
 
@@ -298,7 +301,40 @@ Tool classes are `[McpServerToolType]`-annotated, sealed, and stateless (except 
 
 | Method | Description |
 |--------|-------------|
-| `StartupReport` | HiJackThis-style boot/persistence report. Sections: Run/RunOnce (all hives + per-user SIDs, enabled-state decoded), Startup folders, scheduled tasks, auto-start services, hosts, DNS, Winsock LSP, shell extensions, Control Panel applets (registry + `System32`/`SysWOW64` `*.cpl`), accessibility ATs, Image File Execution Options, Winlogon hooks, AppInit_DLLs, Active Setup, browser proxy, trusted-zone. Catalog-aware code-signing trust on every file-backed entry. `format`: `summary` (default, inline) / `json` / `text` / `both`; `includeProcesses` opt-in |
+| `StartupReport` | HiJackThis-style boot/persistence report. Sections: Run/RunOnce (all hives + per-user SIDs, enabled-state decoded), Startup folders, scheduled tasks (COM-handler CLSIDs resolved to InprocServer32), auto-start services, hosts, DNS, Winsock LSP, shell extensions, Control Panel applets (registry + `System32`/`SysWOW64` `*.cpl`), accessibility ATs, Image File Execution Options, Winlogon hooks, AppInit_DLLs, Active Setup, browser proxy, trusted-zone. Catalog-aware code-signing trust on every file-backed entry. Summary ranks HIGH missing-target / persistence hooks, MEDIUM untrusted-third-party, LOW ms-file-missing. `format`: `summary` (default, inline) / `json` / `text` / `both`; `includeProcesses` opt-in |
+
+---
+
+### `IntegrityTools` — 1 tool
+`src/WindowsMcp/Tools/IntegrityTools.cs`
+
+**Injected:** `IIntegrityService`
+
+| Method | Description |
+|--------|-------------|
+| `Integrity` | File-integrity tripwire: `baseline` / `check` / `list` over a curated watch-list |
+
+---
+
+### `WatchTools` — 1 tool
+`src/WindowsMcp/Tools/WatchTools.cs`
+
+**Injected:** `IWatchService`
+
+| Method | Description |
+|--------|-------------|
+| `Watch` | Live directory watching (`start` / `poll` / `stop` / `list`); max 16 sessions |
+
+---
+
+### `UsnTools` — 1 tool
+`src/WindowsMcp/Tools/UsnTools.cs`
+
+**Injected:** `IUsnService`
+
+| Method | Description |
+|--------|-------------|
+| `FsChanges` | NTFS USN journal `status` / `since` (elevation required; volume letter validated) |
 
 ---
 
@@ -336,6 +372,13 @@ Located in `src/WindowsMcp.Abstractions/`. Each interface is a separate file.
 | `ILspEnumerator` | `Enumerate()` → Winsock catalog providers |
 | `IShortcutResolver` | `ResolveTarget(lnk)` → `.lnk` target via IShellLink |
 | `IStartupReportService` | `BuildAsync()` → aggregated `StartupReportDto` |
+| `IIntegrityService` | `DefaultWatchList`, `BaselineAsync`, `GetBaseline`, `CheckAsync` |
+| `IUsnService` | `StatusAsync`, `ReadAsync` |
+| `IWatchService` | `Start`, `Poll`, `Stop`, `List` |
+| `ICertStoreService` | `ListAsync` |
+| `IReliabilityService` | `GetAsync` |
+| `IDriverService` | `ListAsync` |
+| `IFileStreamService` | `GetStreamsAsync` |
 
 ---
 
@@ -389,10 +432,13 @@ Uses **H.InputSimulator** (`WindowsInput` namespace) which calls `SendInput` dir
 
 ### `PowerShellService`
 
-Executes PowerShell via `System.Diagnostics.Process` with security filtering:
-- Blocks dangerous commands (format, shutdown, del, etc.) and injection-risk flags (-enc, -encodedcommand)
-- Pipes stdin as the script body (avoids command-line length limits)
-- Returns `PowerShellResult(Stdout, Stderr, ExitCode)` to callers
+Executes PowerShell via `System.Diagnostics.Process` (one child at a time behind a serialization gate):
+- `ValidateCommand()` blocklist rejects Invoke-Expression/IEX, Start-Process, disk-wipe cmdlets,
+  nested `-EncodedCommand`, and download cradles before spawn
+- Scripts pass via `-EncodedCommand` (short) or a temp `-File` (long); stdin is redirected and
+  closed so the child cannot consume MCP JSON-RPC bytes
+- Returns `PSResult(Success, Stdout, Stderr, ExitCode, Errors)`; `Success` requires exit 0 and no
+  real stderr diagnostics (CLIXML progress scaffolding is filtered)
 
 ### `ScreenshotService`
 

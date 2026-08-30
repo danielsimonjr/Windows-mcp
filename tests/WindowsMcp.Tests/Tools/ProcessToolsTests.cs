@@ -62,6 +62,53 @@ public class ProcessToolsTests
     }
 
     [Fact]
+    public async Task StartProcess_requires_confirm_true()
+    {
+        var mock = new Mock<IProcessService>();
+        var tools = MakeTools(process: mock.Object);
+
+        Func<Task> act = () => tools.StartProcess("notepad.exe", confirm: false);
+
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*confirm*");
+        mock.Verify(s => s.StartDetachedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ScheduledTask_run_requires_confirm_true()
+    {
+        var mock = new Mock<ITaskSchedulerService>();
+        var tools = MakeTools(scheduler: mock.Object);
+
+        Func<Task> act = () => tools.ScheduledTask("run", name: "MyTask", confirm: false);
+
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*confirm*");
+        mock.Verify(s => s.RunAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ScheduledTask_create_requires_confirm_true()
+    {
+        var mock = new Mock<ITaskSchedulerService>();
+        var tools = MakeTools(scheduler: mock.Object);
+
+        Func<Task> act = () => tools.ScheduledTask(
+            "create", name: "MyTask", command: "cmd.exe", trigger: "daily", confirm: false);
+
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*confirm*");
+        mock.Verify(s => s.CreateAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessInspect_rejects_non_positive_pid()
+    {
+        var tools = MakeTools();
+        Func<Task> act = () => tools.ProcessInspect(0);
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*positive*");
+    }
+
+    [Fact]
     public async Task Process_orphans_calls_ListLineageAsync_with_orphansOnly_true()
     {
         var mock = new Mock<IProcessService>();
@@ -182,5 +229,62 @@ public class ProcessToolsTests
 
         // Neither branch should have killed anything.
         mock.Verify(m => m.KillAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Service_start_requires_confirm()
+    {
+        var mock = new Mock<IServiceControlService>();
+        var tools = MakeTools(service: mock.Object);
+
+        var act = () => tools.Service("start", name: "Spooler", confirm: false);
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*confirm*");
+        mock.Verify(s => s.StartAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Service_list_dispatches()
+    {
+        var mock = new Mock<IServiceControlService>();
+        mock.Setup(s => s.ListAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { new ServiceDto("Spooler", "Print Spooler", "Running", "Automatic") });
+        var tools = MakeTools(service: mock.Object);
+
+        var json = await tools.Service("list");
+
+        json.Should().Contain("Spooler");
+        mock.Verify(s => s.ListAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task EventLog_invalid_since_throws()
+    {
+        var tools = MakeTools();
+        var act = () => tools.EventLog("Application", since: "not-a-date");
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*since*");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1001)]
+    public async Task EventLog_max_out_of_range_throws(int max)
+    {
+        var tools = MakeTools();
+        var act = () => tools.EventLog("Application", max: max);
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*max*");
+    }
+
+    [Fact]
+    public async Task ScheduledTask_list_dispatches()
+    {
+        var mock = new Mock<ITaskSchedulerService>();
+        mock.Setup(s => s.ListAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { new ScheduledTaskDto("MyTask", @"\MyTask", "Ready", null, null) });
+        var tools = MakeTools(scheduler: mock.Object);
+
+        var json = await tools.ScheduledTask("list");
+
+        json.Should().Contain("MyTask");
+        mock.Verify(s => s.ListAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 }

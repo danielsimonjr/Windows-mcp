@@ -20,7 +20,7 @@ The primary goal of Windows-MCP is to provide AI agents with the ability to:
 | Feature | Description |
 |---------|-------------|
 | **Native Windows Integration** | Direct access to Windows UI Automation API via `FlaUI.UIA3` |
-| **Dependency Injection** | All 32 services are singleton-scoped, wired via `Microsoft.Extensions.Hosting` |
+| **Dependency Injection** | All 35 services are singleton-scoped, wired via `Microsoft.Extensions.Hosting` |
 | **Source-Generated Tool Discovery** | `[McpServerTool]` attributes are discovered at compile time by the MCP SDK source generator |
 | **Interface-Driven Architecture** | Every service backed by an `IXxxService` interface in a separate Abstractions assembly |
 | **DPI-Aware** | Per-Monitor DPI Awareness V2 enabled at startup for correct multi-monitor coordinate handling |
@@ -48,18 +48,20 @@ The primary goal of Windows-MCP is to provide AI agents with the ability to:
 │  │         ModelContextProtocol SDK (WithStdioServerTransport) ││
 │  └─────────────────────────────────────────────────────────────┘│
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │        MCP Tool Layer  (15 [McpServerToolType] classes)     ││
+│  │        MCP Tool Layer  (18 [McpServerToolType] classes)     ││
 │  │   InputTools · UIAutomationTools · FileTools · ShellTools   ││
 │  │   SystemTools · WindowTools · ProcessTools · ScreenTools    ││
 │  │   NetworkTools · RegistryTools · WebTools · DiskTools       ││
+│  │   StorageTools · SecurityTools · StartupTools               ││
+│  │   IntegrityTools · WatchTools · UsnTools                    ││
 │  └─────────────────────────────────────────────────────────────┘│
 │  ┌─────────────────────────────────────────────────────────────┐│
 │  │   Service Abstraction Layer  (WindowsMcp.Abstractions)      ││
-│  │        32 IXxxService interfaces + Model DTOs               ││
+│  │        35 IXxxService interfaces + Model DTOs               ││
 │  └─────────────────────────────────────────────────────────────┘│
 │  ┌─────────────────────────────────────────────────────────────┐│
 │  │   Service Implementation Layer  (WindowsMcp.Services)       ││
-│  │        32 XxxService singletons registered via DI           ││
+│  │        35 XxxService singletons registered via DI           ││
 │  └─────────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────┘
                                 │
@@ -104,11 +106,11 @@ Windows-MCP exposes **63 MCP tools** across 18 tool classes:
 ### Window Tools (`WindowTools` — 5 tools)
 | Tool | Purpose |
 |------|---------|
-| `SwitchToWindow` | Focus a window by title pattern |
-| `Window` | Get window info (position, size, state) |
+| `SwitchToWindow` | Focus a window by exact title |
+| `Window` | minimize/maximize/restore/close a window by title |
 | `MultiMonitor` | Get all monitor layouts and resolutions |
-| `Launch` | Launch an application by name |
-| `StartProcess` | Start a detached process that survives independently |
+| `Launch` | Launch an application by name (`confirm:true`) |
+| `Focus` | Alias for SwitchToWindow |
 
 ### File Tools (`FileTools` — 9 tools)
 | Tool | Purpose |
@@ -121,7 +123,7 @@ Windows-MCP exposes **63 MCP tools** across 18 tool classes:
 | `FileHash` | Compute SHA256/SHA1/MD5 hex digest |
 | `FileStreams` | NTFS alternate data streams + reparse target |
 | `FileDialog` | Interact with open/save dialogs |
-| `Archive` | Create, extract, or inspect zip/tar archives |
+| `Archive` | Zip or unzip an archive (`confirm:true`) |
 
 ### System Tools (`SystemTools` — 9 tools)
 | Tool | Purpose |
@@ -173,19 +175,19 @@ Windows-MCP exposes **63 MCP tools** across 18 tool classes:
 ### Network Tools (`NetworkTools` — 2 tools)
 | Tool | Purpose |
 |------|---------|
-| `Network` | Get network adapter info and IP configuration |
-| `HttpRequest` | Make HTTP requests (GET/POST/etc.) |
+| `Network` | adapters / ports / ping / dns / wifi |
+| `Firewall` | list / add / remove firewall rules |
 
 ### Web Tool (`WebTools` — 2 tools)
 | Tool | Purpose |
 |------|---------|
-| `Scrape` | Fetch a webpage and convert to Markdown |
-| `Shortcut` | Create or read a Windows shell shortcut (.lnk) |
+| `Scrape` | Fetch a public webpage and convert to Markdown (SSRF-protected) |
+| `HttpRequest` | HTTP GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS (SSRF-protected) |
 
 ### Disk Tool (`DiskTools` — 1 tool)
 | Tool | Purpose |
 |------|---------|
-| `DiskInspect` | List drives with capacity, free space, file system |
+| `DiskInspect` | usage / reclaimable / file_types / stale analysis |
 
 ### Storage Tool (`StorageTools` — 1 tool)
 | Tool | Purpose |
@@ -195,7 +197,22 @@ Windows-MCP exposes **63 MCP tools** across 18 tool classes:
 ### Startup Tools (`StartupTools` — 1 tool)
 | Tool | Purpose |
 |------|---------|
-| `StartupReport` | HiJackThis-style boot/persistence report. Sections: Run/RunOnce (all hives incl. per-user SIDs, with enabled state), Startup folders, scheduled tasks, auto-start services, hosts, DNS, Winsock LSP, shell extensions, Control Panel applets (registry + `System32`/`SysWOW64` `*.cpl`), accessibility ATs, Image File Execution Options, Winlogon hooks, AppInit_DLLs, Active Setup, browser proxy, trusted-zone sites. Every file-backed entry has a catalog-aware code-signing trust flag. `format=summary` (default — counts + only flagged entries, inline) \| `json` \| `text` \| `both`; `includeProcesses` opt-in |
+| `StartupReport` | HiJackThis-style boot/persistence report. COM-handler tasks resolve CLSID → InprocServer32. Summary ranks HIGH missing-target / persistence hooks, MEDIUM untrusted-third-party, LOW ms-file-missing. `format=summary` (default) \| `json` \| `text` \| `both`; `includeProcesses` opt-in |
+
+### Integrity Tools (`IntegrityTools` — 1 tool)
+| Tool | Purpose |
+|------|---------|
+| `Integrity` | File-integrity tripwire: baseline / check / list |
+
+### Watch Tools (`WatchTools` — 1 tool)
+| Tool | Purpose |
+|------|---------|
+| `Watch` | Live directory watching with server-side event buffer (max 16 sessions) |
+
+### USN Tools (`UsnTools` — 1 tool)
+| Tool | Purpose |
+|------|---------|
+| `FsChanges` | NTFS USN journal status / since (elevation required) |
 
 ## Core NuGet Dependencies
 

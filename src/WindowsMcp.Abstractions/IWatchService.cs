@@ -12,7 +12,8 @@ public interface IWatchService
     /// <summary>Begin watching a directory. Returns the new session (with its id).</summary>
     WatchSession Start(string path, string? filter, bool includeSubdirectories);
 
-    /// <summary>Drain up to <paramref name="max"/> buffered events for a session (empty if the id is unknown).</summary>
+    /// <summary>Drain up to <paramref name="max"/> buffered events for a session.</summary>
+    /// <exception cref="KeyNotFoundException">When the session id is unknown.</exception>
     WatchEvent[] Poll(string id, int max);
 
     /// <summary>End a session and release its watcher. Returns false if the id is unknown.</summary>

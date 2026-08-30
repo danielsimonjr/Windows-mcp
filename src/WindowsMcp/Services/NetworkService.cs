@@ -93,14 +93,41 @@ public sealed class NetworkService : INetworkService
         return addresses.Select(a => a.ToString()).ToArray();
     }
 
-    public Task<WifiInfoDto> GetWifiAsync(CancellationToken ct = default)
+    public async Task<WifiInfoDto> GetWifiAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        // v0.2.0 placeholder: real WiFi info requires either:
-        //   (a) Windows.Networking.Connectivity WinRT APIs (needs UWP package),
-        //   (b) shelling out to `netsh wlan show interfaces` and parsing output.
-        // Tracked for v0.3.0: implement via netsh shell-out to avoid WinRT
-        // packaging requirements.
-        return Task.FromResult(new WifiInfoDto("Unknown", 0, "ManagedAPIRequired"));
+        var result = await _ps.RunAsync("netsh wlan show interfaces", ct);
+        if (!result.Success && string.IsNullOrWhiteSpace(result.Stdout))
+            return new WifiInfoDto("Unknown", 0, "Unavailable");
+        return ParseWifi(result.Stdout);
+    }
+
+    /// <summary>Parse <c>netsh wlan show interfaces</c> output into a DTO.</summary>
+    internal static WifiInfoDto ParseWifi(string? stdout)
+    {
+        if (string.IsNullOrWhiteSpace(stdout))
+            return new WifiInfoDto("Unknown", 0, "Unavailable");
+
+        string ssid = "Unknown";
+        int signal = 0;
+        string status = "Unknown";
+        foreach (var raw in stdout.Split('\n'))
+        {
+            var line = raw.Trim();
+            var colon = line.IndexOf(':');
+            if (colon < 0) continue;
+            var key = line[..colon].Trim();
+            var value = line[(colon + 1)..].Trim();
+            if (key.Equals("SSID", StringComparison.OrdinalIgnoreCase) && !key.Contains("BSSID", StringComparison.OrdinalIgnoreCase))
+                ssid = value;
+            else if (key.Equals("State", StringComparison.OrdinalIgnoreCase))
+                status = value;
+            else if (key.Equals("Signal", StringComparison.OrdinalIgnoreCase))
+            {
+                var digits = new string(value.Where(char.IsDigit).ToArray());
+                if (int.TryParse(digits, out var n)) signal = n;
+            }
+        }
+        return new WifiInfoDto(ssid, signal, status);
     }
 }

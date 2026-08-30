@@ -181,9 +181,10 @@ Output: ClickResult { X=800, Y=400, Button="Right", Clicks=1 }
      │              │                    ├────────────────────────► │
      │              │                    │                          │
      │              │                    │ Process.Start()          │
-     │              │                    │  "pwsh -NonInteractive"  │
+     │              │                    │  powershell.exe          │
+     │              │                    │  -EncodedCommand / -File │
      │              │                    ├─────────────────────────►│
-     │              │                    │                          │ write stdin
+     │              │                    │                          │ stdin closed
      │              │                    │◄─────────────────────────┤
      │              │                    │  (stdout, stderr,        │
      │              │                    │   exitCode)              │
@@ -199,13 +200,14 @@ Output: ClickResult { X=800, Y=400, Button="Right", Clicks=1 }
 Input:  command = "Get-Process | Select-Object Name,CPU | ConvertTo-Json"
 
 Processing:
-  1. ValidateCommand() — blocklist check (format, shutdown, del, -enc, ...)
-  2. Process.Start("pwsh", ["-NonInteractive", "-Command", "-"])
-  3. Write command to stdin pipe
-  4. Await exit; read stdout + stderr
+  1. ValidateCommand() — blocklist (IEX, Start-Process, Format-Volume, -EncodedCommand, download cradles)
+  2. Process.Start(powershell.exe, -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand …)
+     Oversize scripts fall back to a temp -File
+  3. Stdin redirected and closed (child must not inherit MCP JSON-RPC)
+  4. Await exit; read stdout + stderr; ParseErrors strips CLIXML progress scaffolding
 
-Output: PowerShellResult { Stdout="[{...}]", Stderr="", ExitCode=0 }
-        → JSON: {"Stdout":"[{...}]","Stderr":"","ExitCode":0}
+Output: PSResult { Success, Stdout, Stderr, ExitCode, Errors }
+        → JSON serialized by ShellTools (confirm:true required)
 ```
 
 ---
