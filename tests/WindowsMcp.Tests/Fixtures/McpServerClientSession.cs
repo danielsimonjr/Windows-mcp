@@ -59,8 +59,8 @@ public sealed class McpServerClientSession : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            if (transport is IAsyncDisposable asyncTransport)
-                await asyncTransport.DisposeAsync();
+            if (transport is IDisposable disposableTransport)
+                disposableTransport.Dispose();
 
             throw new InvalidOperationException(
                 $"failed to establish an MCP client session.{FormatStderr(stderrLines)}",
