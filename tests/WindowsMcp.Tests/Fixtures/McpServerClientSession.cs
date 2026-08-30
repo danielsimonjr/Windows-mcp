@@ -67,8 +67,7 @@ public sealed class McpServerClientSession : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (Client is IAsyncDisposable asyncClient)
-            await asyncClient.DisposeAsync();
+        await Client.DisposeAsync();
     }
 
     private static string FormatStderr(ConcurrentQueue<string> stderrLines)
