@@ -25,12 +25,26 @@ The primary goal of Windows-MCP is to provide AI agents with the ability to:
 | **Interface-Driven Architecture** | Every service backed by an `IXxxService` interface in a separate Abstractions assembly |
 | **DPI-Aware** | Per-Monitor DPI Awareness V2 enabled at startup for correct multi-monitor coordinate handling |
 | **UTF-8 Stdio** | Output encoding forced to UTF-8 before host starts — prevents buffering bugs on Windows |
+| **Tools-Only MCP Surface** | The server intentionally registers tools over stdio only; prompts/resources/completions are not exposed |
 
 ## Platform Requirements
 
 - **Operating System**: Windows 10 or 11 (some features require Windows 10 1703+)
 - **.NET Runtime**: .NET 9 or higher
 - **Architecture**: x64 (64-bit)
+
+## MCP 2.0 compliance surface
+
+The repository verifies compatibility with the official `ModelContextProtocol` 2.2.0 SDK
+and the MCP **2026-07-28** revision for the server features this project actually uses.
+
+- **Transport:** stdio only
+- **Capabilities advertised by this repo:** tools
+- **Protocol flows covered by tests:** handshake, `ping`, `tools/list`, `tools/call`, and JSON-RPC unknown-method rejection
+- **Deliberate non-goals:** prompts, resources, completions, roots, sampling, logging controls, HTTP transport
+
+See `tests/WindowsMcp.Tests/Protocol/Mcp20ProtocolTests.cs`
+for the repeatable conformance smoke suite.
 
 ## High-Level Architecture
 

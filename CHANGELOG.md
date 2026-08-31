@@ -1,3 +1,14 @@
+## [Unreleased]
+
+### Added
+
+- Added an MCP 2.0 conformance smoke suite in
+  `tests/WindowsMcp.Tests/Protocol/Mcp20ProtocolTests.cs` that exercises the real stdio
+  server through the official C# client SDK, covering handshake, `ping`, `tools/list`,
+  `tools/call`, caller-facing tool errors, and JSON-RPC method-not-found handling.
+- Documented the repo's supported MCP surface as a **tools-only stdio server** pinned to
+  the SDK's 2026-07-28 protocol revision tests.
+
 ## [0.7.3] - 2026-08-23
 
 > **Numbered 0.7.3, not 0.8.0.** This release was first cut as 0.8.0 and the tag was refused:

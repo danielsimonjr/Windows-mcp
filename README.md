@@ -2,7 +2,7 @@
 
 An MCP server for Windows desktop automation, written in C# on the official
 [`ModelContextProtocol`](https://www.nuget.org/packages/ModelContextProtocol)
-SDK. **60 tools** across input, screen, window, UI automation, process/shell,
+SDK. **63 tools** across input, screen, window, UI automation, process/shell,
 file, disk, system, security, startup, network, registry, and web categories.
 
 > **History:** Versions 0.x through 0.8.5 were written in Python. v0.2.0 (2026-05-26)
@@ -46,6 +46,34 @@ Add to your MCP host config (e.g.,
 
 Run `/reload-plugins`. Tools appear as `mcp__Windows-mcp__*`.
 
+## MCP 2.0 support
+
+This server's MCP surface is intentionally **tools-only over stdio**, implemented by
+the official `ModelContextProtocol` **2.2.0** SDK and pinned to the
+**2026-07-28** protocol revision in the conformance tests.
+
+What is verified:
+
+- server handshake and server info
+- tools capability advertisement
+- `tools/list` schema generation and complete-result shape
+- `tools/call` success/error behavior and text content blocks
+- JSON-RPC method-not-found handling
+
+What this server intentionally does **not** expose:
+
+- prompts
+- resources / resource templates / subscriptions
+- completions
+- roots
+- sampling / elicitation
+- logging configuration
+- HTTP transport
+
+The repeatable smoke suite lives in
+`tests/WindowsMcp.Tests/Protocol/Mcp20ProtocolTests.cs`
+and runs as part of `dotnet test` on Windows.
+
 ## Companion skill
 
 The plugin also ships a `windows` skill (`windows-mcp:windows`, `/windows`) —
@@ -55,7 +83,7 @@ operations. See [`skills/windows/SKILL.md`](skills/windows/SKILL.md).
 
 ## Tool reference
 
-60 tools, grouped:
+63 tools, grouped:
 
 | Category | Tools |
 |---|---|
@@ -109,6 +137,7 @@ for the `dist/` folder.
 dotnet build                                       # incremental
 dotnet test --filter "Category=Unit"               # fast loop (29 tests, ~1s)
 dotnet test --filter "Category=Integration"        # exercises real Windows APIs
+dotnet test --filter "Protocol=Mcp20"              # MCP 2.0 conformance smoke suite
 dotnet test --filter "Category=UIAutomation"       # launches Notepad fixture
 dotnet test                                        # full suite
 ```
