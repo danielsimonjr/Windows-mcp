@@ -24,3 +24,8 @@ LookupPrivilegeValue
 AdjustTokenPrivileges
 CloseHandle
 SetCurrentProcessExplicitAppUserModelID
+EnumWindows
+GetWindowTextLength
+IsWindowVisible
+GetWindowRect
+IsIconic

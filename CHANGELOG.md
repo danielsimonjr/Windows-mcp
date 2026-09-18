@@ -9,6 +9,26 @@
 - Documented the repo's supported MCP surface as a **tools-only stdio server** pinned to
   the SDK's 2026-07-28 protocol revision tests.
 
+## [Unreleased]
+
+### Fixed
+
+- `focus` / `switch_to_window` / `window` could not act on windows the server could plainly see.
+  All three resolved the target with `FindWindow(null, title)`, which demands an EXACT,
+  full-string caption match. Measured 2026-09-17: `focus` returned "window not found" for a title
+  that `EnumWindows` confirmed was visible with that byte-exact string, while `get_state` listed
+  the same window through UIAutomation - the two disagreed because only one went through
+  `FindWindow`. Exact matching is also a race on modern apps, whose captions carry live state
+  (Obsidian's begins `New tab - ` and changes as tabs change), so even copying the caption
+  verbatim can miss.
+  Window lookup now enumerates top-level windows and ranks them in `WindowMatcher`: exact, then
+  prefix, then substring, all case-insensitive; a VISIBLE window always beats a hidden one, and
+  then the larger wins - because File Explorer and the PortableApps platform both keep zero-area
+  helper windows carrying the real window's caption, and activating one of those is a silent
+  no-op. Ranking is a pure function so it is tested without a desktop (11 new tests).
+- `switch_to_window` now restores a minimized window before foregrounding it. Previously it
+  reported success while the window stayed minimized and the caller saw nothing change.
+
 ## [0.7.3] - 2026-08-23
 
 > **Numbered 0.7.3, not 0.8.0.** This release was first cut as 0.8.0 and the tag was refused:
