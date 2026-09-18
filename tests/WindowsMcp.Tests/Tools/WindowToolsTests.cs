@@ -57,7 +57,7 @@ public class WindowToolsTests
     public async Task SwitchToWindow_found()
     {
         var mock = new Mock<IWindowService>();
-        mock.Setup(s => s.SwitchToAsync("Notepad", It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        mock.Setup(s => s.SwitchToAsync("Notepad", It.IsAny<CancellationToken>())).ReturnsAsync(new WindowFocusResult(Found: true, Activated: true));
         var tools = new WindowTools(mock.Object);
 
         var result = await tools.SwitchToWindow("Notepad");
@@ -69,7 +69,7 @@ public class WindowToolsTests
     public async Task SwitchToWindow_not_found()
     {
         var mock = new Mock<IWindowService>();
-        mock.Setup(s => s.SwitchToAsync("Missing", It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        mock.Setup(s => s.SwitchToAsync("Missing", It.IsAny<CancellationToken>())).ReturnsAsync(new WindowFocusResult(Found: false, Activated: false));
         var tools = new WindowTools(mock.Object);
 
         var result = await tools.SwitchToWindow("Missing");
@@ -81,7 +81,7 @@ public class WindowToolsTests
     public async Task Focus_found()
     {
         var mock = new Mock<IWindowService>();
-        mock.Setup(s => s.SwitchToAsync("Notepad", It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        mock.Setup(s => s.SwitchToAsync("Notepad", It.IsAny<CancellationToken>())).ReturnsAsync(new WindowFocusResult(Found: true, Activated: true));
         var tools = new WindowTools(mock.Object);
 
         var result = await tools.Focus("Notepad");
@@ -93,11 +93,42 @@ public class WindowToolsTests
     public async Task Focus_not_found()
     {
         var mock = new Mock<IWindowService>();
-        mock.Setup(s => s.SwitchToAsync("Missing", It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        mock.Setup(s => s.SwitchToAsync("Missing", It.IsAny<CancellationToken>())).ReturnsAsync(new WindowFocusResult(Found: false, Activated: false));
         var tools = new WindowTools(mock.Object);
 
         var result = await tools.Focus("Missing");
 
         result.Should().Contain("not found").And.Contain("Missing");
+    }
+
+    [Fact]
+    public async Task Focus_found_but_foreground_refused_does_NOT_say_not_found()
+    {
+        // The defect this encodes: SetForegroundWindow returns false for a background process as a
+        // matter of Windows policy, and the old wording reported that as "window not found". That
+        // sent a real investigation after a lookup bug that did not exist.
+        var mock = new Mock<IWindowService>();
+        mock.Setup(s => s.SwitchToAsync("Obsidian", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new WindowFocusResult(Found: true, Activated: false));
+        var tools = new WindowTools(mock.Object);
+
+        var result = await tools.Focus("Obsidian");
+
+        result.Should().NotContain("not found");
+        result.Should().Contain("Obsidian").And.Contain("refused the foreground change");
+    }
+
+    [Fact]
+    public async Task SwitchToWindow_found_but_foreground_refused_does_NOT_say_not_found()
+    {
+        var mock = new Mock<IWindowService>();
+        mock.Setup(s => s.SwitchToAsync("Obsidian", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new WindowFocusResult(Found: true, Activated: false));
+        var tools = new WindowTools(mock.Object);
+
+        var result = await tools.SwitchToWindow("Obsidian");
+
+        result.Should().NotContain("not found");
+        result.Should().Contain("refused the foreground change");
     }
 }

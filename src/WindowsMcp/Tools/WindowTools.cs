@@ -28,8 +28,13 @@ public sealed class WindowTools
     public async Task<string> SwitchToWindow(
         [Description("Window title to bring to foreground")] string title)
     {
-        bool ok = await _window.SwitchToAsync(title);
-        return ok ? $"switched to '{title}'" : $"window '{title}' not found";
+        var r = await _window.SwitchToAsync(title);
+        if (!r.Found)
+            return $"window '{title}' not found";
+        return r.Activated
+            ? $"switched to '{title}'"
+            : $"found '{title}' and raised it, but Windows refused the foreground change "
+              + "(only the current foreground process may hand focus away)";
     }
 
     [McpServerTool, Description("Launch an application by name or path. Uses ShellExecute so Start Menu shortcuts and PATH are resolved. Requires confirm:true.")]
@@ -47,8 +52,13 @@ public sealed class WindowTools
     public async Task<string> Focus(
         [Description("Window title to focus")] string title)
     {
-        bool ok = await _window.SwitchToAsync(title);
-        return ok ? $"focused '{title}'" : $"window '{title}' not found";
+        var r = await _window.SwitchToAsync(title);
+        if (!r.Found)
+            return $"window '{title}' not found";
+        return r.Activated
+            ? $"focused '{title}'"
+            : $"found '{title}' and raised it, but Windows refused the foreground change "
+              + "(only the current foreground process may hand focus away)";
     }
 
     [McpServerTool, Description("Enumerate all connected monitors and return geometry information.")]

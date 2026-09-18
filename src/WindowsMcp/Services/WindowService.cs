@@ -65,6 +65,103 @@ public sealed class WindowService : IWindowService
         return match is null ? HWND.Null : (HWND)match.Value.Handle;
     }
 
+    /// <summary>
+    /// Runs <paramref name="work"/> on a dedicated STA thread and returns its result.
+    ///
+    /// UIAutomation is COM and requires an STA apartment. MCP tool calls arrive on MTA thread-pool
+    /// threads, where FlaUI's desktop enumeration quietly yields nothing - which is why an earlier
+    /// UIA fallback here "found" no windows while <see cref="UIAutomationService"/>, which owns a
+    /// long-lived STA worker, listed them fine in the same process. COM objects are apartment-bound,
+    /// so the whole find-and-act sequence must happen inside ONE call, not just the lookup.
+    /// </summary>
+    private static T RunOnSta<T>(Func<T> work)
+    {
+        T result = default!;
+        Exception? failure = null;
+
+        var thread = new Thread(() =>
+        {
+            try { result = work(); }
+            catch (Exception ex) { failure = ex; }
+        })
+        {
+            IsBackground = true,
+            Name = "WindowsMcp-WindowLookup-STA",
+        };
+
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+
+        return failure is not null ? throw failure : result;
+    }
+
+    /// <summary>
+    /// Finds a top-level window through UIAutomation and focuses it, entirely on one STA thread.
+    ///
+    /// Used when USER32 enumeration comes up empty, which happens whenever this server is started
+    /// from a service-hosted parent: EnumWindows is scoped to the caller's window station and
+    /// desktop and returns NONE of the interactive desktop's windows there, while UIAutomation
+    /// reaches them through its own COM service. Measured 2026-09-17 inside one server process,
+    /// seconds apart: `focus` missed a window by its byte-exact caption while `get_state` returned
+    /// that same caption.
+    ///
+    /// Deliberately does not require NativeWindowHandle: UIA commonly reports it as 0, and an
+    /// earlier version that insisted on a handle discarded every candidate and still said
+    /// "not found".
+    /// </summary>
+    private static bool TryFocusViaUIAutomation(string title)
+    {
+        return RunOnSta(() =>
+        {
+            using var automation = new FlaUI.UIA3.UIA3Automation();
+            var elements = new List<FlaUI.Core.AutomationElements.AutomationElement>();
+            var candidates = new List<WindowCandidate>();
+
+            foreach (var child in automation.GetDesktop().FindAllChildren())
+            {
+                string name;
+                try { name = child.Properties.Name.ValueOrDefault ?? string.Empty; }
+                catch { continue; }   // a window can vanish mid-enumeration; skip only that one
+
+                if (string.IsNullOrEmpty(name))
+                    continue;
+
+                long area = 0;
+                bool visible = true;
+                try
+                {
+                    var r = child.Properties.BoundingRectangle.ValueOrDefault;
+                    area = (long)Math.Max(0, r.Width) * (long)Math.Max(0, r.Height);
+                    visible = !child.Properties.IsOffscreen.ValueOrDefault;
+                }
+                catch { /* geometry only affects ranking; its absence must not drop the candidate */ }
+
+                // The index rides in the handle field so the shared matcher can rank these exactly
+                // as it ranks USER32 results.
+                candidates.Add(new WindowCandidate(elements.Count, name, visible, area));
+                elements.Add(child);
+            }
+
+            WindowCandidate? match = WindowMatcher.Select(candidates, title);
+            if (match is null)
+                return false;
+
+            var element = elements[(int)match.Value.Handle];
+
+            if (element.Patterns.Window.TryGetPattern(out var windowPattern)
+                && windowPattern.WindowVisualState.ValueOrDefault == FlaUI.Core.Definitions.WindowVisualState.Minimized)
+            {
+                // Focusing a minimized window leaves it minimized, so the call would report success
+                // while nothing visibly changed.
+                windowPattern.SetWindowVisualState(FlaUI.Core.Definitions.WindowVisualState.Normal);
+            }
+
+            element.Focus();
+            return true;
+        });
+    }
+
     public Task<WindowAction> ExecuteAsync(string action, string? title, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -100,21 +197,35 @@ public sealed class WindowService : IWindowService
         return Task.FromResult(new WindowAction(action, title, found));
     }
 
-    public Task<bool> SwitchToAsync(string title, CancellationToken ct = default)
+    public Task<WindowFocusResult> SwitchToAsync(string title, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
         HWND hwnd = ResolveWindow(title);
-        if (hwnd == HWND.Null)
-            return Task.FromResult(false);
+        if (hwnd != HWND.Null)
+        {
+            // A minimized window stays minimized when it is merely foregrounded, so the call would
+            // report success while the caller sees nothing change. Restore first.
+            if (PInvoke.IsIconic(hwnd))
+                PInvoke.ShowWindow(hwnd, SHOW_WINDOW_CMD.SW_RESTORE);
 
-        // A minimized window stays minimized when it is merely foregrounded, so the call would
-        // report success while the caller sees nothing change. Restore first.
-        if (PInvoke.IsIconic(hwnd))
-            PInvoke.ShowWindow(hwnd, SHOW_WINDOW_CMD.SW_RESTORE);
+            bool activated = PInvoke.SetForegroundWindow(hwnd);
 
-        bool ok = PInvoke.SetForegroundWindow(hwnd);
-        return Task.FromResult(ok);
+            // Windows only lets the CURRENT foreground process hand focus away, so a background
+            // server is refused here as a matter of policy, not error. Raising the window is the
+            // honest best effort, and UIA can often complete the activation where USER32 cannot.
+            if (!activated)
+            {
+                PInvoke.ShowWindow(hwnd, SHOW_WINDOW_CMD.SW_SHOW);
+                activated = TryFocusViaUIAutomation(title);
+            }
+
+            return Task.FromResult(new WindowFocusResult(true, activated));
+        }
+
+        // USER32 found nothing. Try UIA once; if it focuses the window, it also found it.
+        bool viaUia = TryFocusViaUIAutomation(title);
+        return Task.FromResult(new WindowFocusResult(viaUia, viaUia));
     }
 
     public Task<int> LaunchAsync(string appName, CancellationToken ct = default)

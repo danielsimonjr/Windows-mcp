@@ -9,6 +9,27 @@
 - Documented the repo's supported MCP surface as a **tools-only stdio server** pinned to
   the SDK's 2026-07-28 protocol revision tests.
 
+## [0.7.6] - 2026-09-17
+
+### Fixed
+
+- `focus` / `switch_to_window` reported "window '<title>' not found" when the window had been
+  found perfectly and Windows had merely refused the foreground change. `SetForegroundWindow`
+  returns false for a background process as a matter of policy - only the current foreground
+  process may hand focus away - and that false was collapsed into the same message as a failed
+  lookup. Measured 2026-09-17: `focus` said "not found" for a window that `window restore` located
+  in the same process moments later, which sent a real investigation after a lookup bug that did
+  not exist. `SwitchToAsync` now returns `WindowFocusResult(Found, Activated)` and the two
+  outcomes read differently. Two regression tests encode it.
+- When USER32 refuses the activation, the server now completes it through UIAutomation on a
+  dedicated **STA** thread. UIA is COM and requires STA; MCP tool calls arrive on MTA thread-pool
+  threads, where FlaUI's desktop enumeration silently yields nothing - which is why an earlier
+  in-process UIA fallback found no windows while `UIAutomationService`, which owns a long-lived STA
+  worker, listed them fine. COM objects are apartment-bound, so the find and the focus now happen
+  inside one STA call.
+  Verified against the real machine: `focus "Obsidian"` now returns `focused 'Obsidian'` where it
+  previously returned "not found", and an absent title still reports "not found".
+
 ## [0.7.5] - 2026-09-17
 
 ### Fixed
