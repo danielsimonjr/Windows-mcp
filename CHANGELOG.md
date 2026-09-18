@@ -9,6 +9,16 @@
 - Documented the repo's supported MCP surface as a **tools-only stdio server** pinned to
   the SDK's 2026-07-28 protocol revision tests.
 
+## [0.7.5] - 2026-09-17
+
+### Fixed
+
+- Report the version the plugin manifest advertises. 0.7.4 bumped
+  `.claude-plugin/plugin.json` but not `<Version>` in `Directory.Build.props`, so the server kept
+  announcing 0.7.3 in its MCP handshake while the manifest said 0.7.4. The repo's own
+  `ServerInfoTests.ServerVersion_matches_the_plugin_manifest` caught it - the drift was invisible
+  to every other signal, including a successful deploy.
+
 ## [Unreleased]
 
 ### Fixed
