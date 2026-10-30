@@ -1,4 +1,21 @@
-## [Unreleased]
+## [0.7.7] - 2026-10-30
+
+### Changed
+
+- Every log entry on stderr now opens with the local date and time to the millisecond, for
+  example `2026-10-30 13:20:05.123 info: WindowsMcp.Services.ScreenshotService[0]`, with the
+  message on the next line. Before, an entry carried no time, so a stderr line could not be tied
+  to the moment it was written. The setup moved into `Program.ConfigureLogging`, and it names the
+  simple console formatter: without a formatter name, the console provider copies its own obsolete
+  options over the formatter options, and the timestamp never renders. The two `:` characters are
+  quoted literals, so the stamp is the same in every culture. An unquoted `:` is the time
+  separator of the culture, which is `.` in fi-FI. Every level still goes to stderr, never to
+  stdout. `LoggingTests` covers the stamp, the culture and the stream with three tests. The idea
+  comes from #31; this is a separate, smaller change on the current `main`.
+- The build resolves newer servicing releases inside the existing floating package ranges than
+  0.7.6 did: the `Microsoft.Extensions.*` and `System.*` packages 9.0.20 to 9.0.22, and
+  `Microsoft.Windows.CsWin32` 0.3.333 to 0.3.367. The bundled .NET runtime moves from 9.0.20 to
+  9.0.22. No package range changed.
 
 ### Fixed
 

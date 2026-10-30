@@ -29,10 +29,10 @@ public static async Task<int> Main(string[] args)
     Console.OutputEncoding = System.Text.Encoding.UTF8;
     Console.InputEncoding  = System.Text.Encoding.UTF8;
 
-    // 4. Build host and configure DI
+    // 4. Build host and configure DI. ConfigureLogging sends every level to stderr and
+    //    opens each entry with the local time: "yyyy-MM-dd HH:mm:ss.fff info: <category>[0]"
     var builder = Host.CreateApplicationBuilder(args);
-    builder.Logging.ClearProviders();
-    builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
+    ConfigureLogging(builder.Logging);
     builder.Services.AddSingleton<IInputService, InputService>();
     // ... (35 services)
 

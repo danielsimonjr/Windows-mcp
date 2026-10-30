@@ -21,6 +21,25 @@ internal static class Program
     internal static string ServerVersion { get; } =
         System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
 
+    /// <summary>
+    /// The one logging setup: every level goes to stderr, because stdout is the JSON-RPC channel.
+    /// Every entry opens with the local date and time to the millisecond.
+    /// </summary>
+    internal static void ConfigureLogging(ILoggingBuilder logging)
+    {
+        logging.ClearProviders();
+        logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
+        // AddSimpleConsole also names the formatter. Without a FormatterName the provider copies
+        // its own (obsolete) options over the formatter's, and the timestamp never renders.
+        // The quoted ':' is a literal: an unquoted ':' is the culture's time separator.
+        logging.AddSimpleConsole(o =>
+        {
+            o.TimestampFormat = "yyyy-MM-dd HH':'mm':'ss.fff ";
+            o.UseUtcTimestamp = false;
+        });
+        logging.SetMinimumLevel(LogLevel.Information);
+    }
+
     public static async Task<int> Main(string[] args)
     {
         // Register AppUserModelID first so WinRT ToastNotification works.
@@ -61,9 +80,7 @@ internal static class Program
         Console.InputEncoding = System.Text.Encoding.UTF8;
 
         var builder = Host.CreateApplicationBuilder(args);
-        builder.Logging.ClearProviders();
-        builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
-        builder.Logging.SetMinimumLevel(LogLevel.Information);
+        ConfigureLogging(builder.Logging);
 
         // Register all services as singletons.
         builder.Services.AddSingleton<IInputService, InputService>();
