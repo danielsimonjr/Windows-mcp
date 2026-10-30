@@ -1,14 +1,3 @@
-## [0.7.4] - 2026-09-17
-
-### Added
-
-- Added an MCP 2.0 conformance smoke suite in
-  `tests/WindowsMcp.Tests/Protocol/Mcp20ProtocolTests.cs` that exercises the real stdio
-  server through the official C# client SDK, covering handshake, `ping`, `tools/list`,
-  `tools/call`, caller-facing tool errors, and JSON-RPC method-not-found handling.
-- Documented the repo's supported MCP surface as a **tools-only stdio server** pinned to
-  the SDK's 2026-07-28 protocol revision tests.
-
 ## [0.7.6] - 2026-09-17
 
 ### Fixed
@@ -40,7 +29,49 @@
   `ServerInfoTests.ServerVersion_matches_the_plugin_manifest` caught it - the drift was invisible
   to every other signal, including a successful deploy.
 
-## [Unreleased]
+## [0.7.4] - 2026-09-17
+
+### Security
+
+- **`PowerShellService.ValidateCommand`** — block high-risk patterns (Invoke-Expression/IEX,
+  Start-Process, disk wipe, nested `-EncodedCommand`, download cradles) before spawning
+  `powershell.exe`. Architecture docs previously claimed this existed; it now does.
+- **`powershell` tool** — requires `confirm:true` (same friction model as other destructive tools).
+- **`start_process` tool** — requires `confirm:true`.
+- **`scheduled_task` run/create** — require `confirm:true` (delete already did).
+- **`WebService` SSRF hardening** — manual redirect following re-validates each hop; DNS failures
+  fail closed; connect-time private-IP blocking; expanded reserved ranges (100.64/10, 198.18/15);
+  30s timeout and 10 MB response cap.
+- **`WmiService` query validation** — class/namespace/WHERE syntax checks block injection.
+- **`RegistryService.SetAsync`** — unknown `kind` is rejected instead of silently coerced to String.
+- **`RegistryPolicy`** — writes to IFEO, Winlogon, AppInit_DLLs, Services, and Policies keys are refused.
+- **`PathPolicy`** — device/`\\?\` paths refused; `file_search` capped at 10 000 hits; missing search root rejected.
+- **`launch`, `file_manage` copy/move, `archive`, `service` start** — require `confirm:true`.
+- **`env include_secrets`** — requires `confirm:true` so secret values cannot leak without an explicit gate.
+- **`CertStore`** — store name allowlisted (`Root`/`CA`/`My`/…).
+- **Watch sessions** — hard cap of 16 concurrent `FileSystemWatcher`s.
+
+### Added
+
+- Added an MCP 2.0 conformance smoke suite in
+  `tests/WindowsMcp.Tests/Protocol/Mcp20ProtocolTests.cs` that exercises the real stdio
+  server through the official C# client SDK, covering handshake, `ping`, `tools/list`,
+  `tools/call`, caller-facing tool errors, and JSON-RPC method-not-found handling.
+- Documented the repo's supported MCP surface as a **tools-only stdio server** pinned to
+  the SDK's 2026-07-28 protocol revision tests.
+
+- **Claude-in-Actions guard foundation (CI / dev infrastructure).** An agent-immutable
+  `claude-guard` workflow (`workflow_run`-triggered so it always runs from `main`, a PR cannot edit
+  its own gate) that checks any future automation PR against a docs-only allowlist, an `src/**`
+  capability guard, one-concern caps, and a `..`-traversal reject — posting a `claude-guard`
+  check-run (fail-closed on error). Backed by a unit-tested policy script
+  (`.github/scripts/claude-guard.sh`, 13 tests, run in CI via `guard-tests.yml`), plus `CODEOWNERS`,
+  an activation runbook, and the Phase-2 design spec/plan under `docs/superpowers/`. Pilot Claude
+  auth is `ANTHROPIC_API_KEY` (a service credential with a Console spend cap). Part of the
+  human-gated "Claude-in-Actions" doc-drift bot pilot; the bot itself (maintenance workflow +
+  digest) is pending credential provisioning. Design survived two adversarial review rounds
+  (Claude-opus + cross-model Gemini/OpenAI), which caught and fixed a workflow script-injection and
+  a rename bypass before merge.
 
 ### Fixed
 
@@ -59,6 +90,35 @@
   no-op. Ranking is a pure function so it is tested without a desktop (11 new tests).
 - `switch_to_window` now restores a minimized window before foregrounding it. Previously it
   reported success while the window stayed minimized and the caller saw nothing change.
+
+- **`ToolErrors`** — surfaces `KeyNotFoundException`, `DirectoryNotFoundException`,
+  `NotSupportedException`, and `Win32Exception` to callers (not masked by the MCP SDK).
+- **`watch` poll** — unknown session id throws `KeyNotFoundException` instead of returning an
+  empty array indistinguishable from "no events yet".
+- **`event_log` max** — clamped to 1–1000 at tool and service layers.
+- **`UIAutomationService` element cache** — bounded LRU (10k entries) replaces unbounded growth.
+- **Input validation** — `process_inspect` rejects non-positive PIDs; `audio set` rejects level
+  outside 0–100; `screenshot`/`ocr` region parsing uses `TryParse` with bounds checks;
+  `http_request` validates HTTP method and maps bad `headers_json` to `ArgumentException`.
+- **`AudioService`** — Core Audio `IAudioEndpointVolume` replaces SendKeys; mute is a real setter
+  and `GetAsync` reports the actual muted state.
+- **`NetworkService.GetWifiAsync`** — parses `netsh wlan show interfaces` (no more placeholder).
+- **`scheduled_task` create** — `daily` / `onlogon` / `onboot` / `onidle` triggers work; COM-handler
+  tasks resolve CLSID → InprocServer32 DLL.
+- **`startup_report` summary** — severity tiers: HIGH missing-target / persistence hooks,
+  MEDIUM untrusted-third-party, LOW ms-file-missing.
+- **`UsnService.NormalizeVolume`** — rejects non-letter volume arguments.
+- **Architecture docs** — OVERVIEW / COMPONENTS / ARCHITECTURE / DATAFLOW reconciled to 18 tool
+  classes, 35 services, and current PowerShell / Screenshot / Network / Web / Window behavior.
+
+### Tests
+
+- Tool-layer coverage for every previously untested class (`WatchTools`, `IntegrityTools`,
+  `UsnTools`, `ShellTools`) and dispatch/validation paths across System/Window/File/Process/
+  Screen/Security/Network/Disk/Input/UIAutomation/Web tools.
+- Service unit tests for PathPolicy, RegistryPolicy, Audio scalar math, EnvService, PowerService
+  unknown-action, Notification XML escape, TaskScheduler named triggers, USN volume normalize,
+  FileSystem copy/move/zip, Disk file-types grouping.
 
 ## [0.7.3] - 2026-08-23
 
@@ -314,72 +374,6 @@
 - `ProcessService.ListAsync` filters by name **before** projecting to DTOs — `MainModule` access
   opens a native handle and throws on protected processes, so skipping non-matches is cheaper and
   quieter. Extracted the duplicated name-or-command-line predicate into `ProcessLineage.Matches`.
-
-## [Unreleased]
-
-### Security
-
-- **`PowerShellService.ValidateCommand`** — block high-risk patterns (Invoke-Expression/IEX,
-  Start-Process, disk wipe, nested `-EncodedCommand`, download cradles) before spawning
-  `powershell.exe`. Architecture docs previously claimed this existed; it now does.
-- **`powershell` tool** — requires `confirm:true` (same friction model as other destructive tools).
-- **`start_process` tool** — requires `confirm:true`.
-- **`scheduled_task` run/create** — require `confirm:true` (delete already did).
-- **`WebService` SSRF hardening** — manual redirect following re-validates each hop; DNS failures
-  fail closed; connect-time private-IP blocking; expanded reserved ranges (100.64/10, 198.18/15);
-  30s timeout and 10 MB response cap.
-- **`WmiService` query validation** — class/namespace/WHERE syntax checks block injection.
-- **`RegistryService.SetAsync`** — unknown `kind` is rejected instead of silently coerced to String.
-- **`RegistryPolicy`** — writes to IFEO, Winlogon, AppInit_DLLs, Services, and Policies keys are refused.
-- **`PathPolicy`** — device/`\\?\` paths refused; `file_search` capped at 10 000 hits; missing search root rejected.
-- **`launch`, `file_manage` copy/move, `archive`, `service` start** — require `confirm:true`.
-- **`env include_secrets`** — requires `confirm:true` so secret values cannot leak without an explicit gate.
-- **`CertStore`** — store name allowlisted (`Root`/`CA`/`My`/…).
-- **Watch sessions** — hard cap of 16 concurrent `FileSystemWatcher`s.
-
-### Fixed
-
-- **`ToolErrors`** — surfaces `KeyNotFoundException`, `DirectoryNotFoundException`,
-  `NotSupportedException`, and `Win32Exception` to callers (not masked by the MCP SDK).
-- **`watch` poll** — unknown session id throws `KeyNotFoundException` instead of returning an
-  empty array indistinguishable from "no events yet".
-- **`event_log` max** — clamped to 1–1000 at tool and service layers.
-- **`UIAutomationService` element cache** — bounded LRU (10k entries) replaces unbounded growth.
-- **Input validation** — `process_inspect` rejects non-positive PIDs; `audio set` rejects level
-  outside 0–100; `screenshot`/`ocr` region parsing uses `TryParse` with bounds checks;
-  `http_request` validates HTTP method and maps bad `headers_json` to `ArgumentException`.
-- **`AudioService`** — Core Audio `IAudioEndpointVolume` replaces SendKeys; mute is a real setter
-  and `GetAsync` reports the actual muted state.
-- **`NetworkService.GetWifiAsync`** — parses `netsh wlan show interfaces` (no more placeholder).
-- **`scheduled_task` create** — `daily` / `onlogon` / `onboot` / `onidle` triggers work; COM-handler
-  tasks resolve CLSID → InprocServer32 DLL.
-- **`startup_report` summary** — severity tiers: HIGH missing-target / persistence hooks,
-  MEDIUM untrusted-third-party, LOW ms-file-missing.
-- **`UsnService.NormalizeVolume`** — rejects non-letter volume arguments.
-- **Architecture docs** — OVERVIEW / COMPONENTS / ARCHITECTURE / DATAFLOW reconciled to 18 tool
-  classes, 35 services, and current PowerShell / Screenshot / Network / Web / Window behavior.
-
-### Tests
-- Tool-layer coverage for every previously untested class (`WatchTools`, `IntegrityTools`,
-  `UsnTools`, `ShellTools`) and dispatch/validation paths across System/Window/File/Process/
-  Screen/Security/Network/Disk/Input/UIAutomation/Web tools.
-- Service unit tests for PathPolicy, RegistryPolicy, Audio scalar math, EnvService, PowerService
-  unknown-action, Notification XML escape, TaskScheduler named triggers, USN volume normalize,
-  FileSystem copy/move/zip, Disk file-types grouping.
-
-### Added
-- **Claude-in-Actions guard foundation (CI / dev infrastructure).** An agent-immutable
-  `claude-guard` workflow (`workflow_run`-triggered so it always runs from `main`, a PR cannot edit
-  its own gate) that checks any future automation PR against a docs-only allowlist, an `src/**`
-  capability guard, one-concern caps, and a `..`-traversal reject — posting a `claude-guard`
-  check-run (fail-closed on error). Backed by a unit-tested policy script
-  (`.github/scripts/claude-guard.sh`, 13 tests, run in CI via `guard-tests.yml`), plus `CODEOWNERS`,
-  an activation runbook, and the Phase-2 design spec/plan under `docs/superpowers/`. Pilot Claude
-  auth is `ANTHROPIC_API_KEY` (a service credential with a Console spend cap). Part of the
-  human-gated "Claude-in-Actions" doc-drift bot pilot; the bot itself (maintenance workflow +
-  digest) is pending credential provisioning. Design survived two adversarial review rounds
-  (Claude-opus + cross-model Gemini/OpenAI), which caught and fixed a workflow script-injection and
-  a rename bypass before merge.
 
 ## [0.6.0] - 2026-07-08
 
