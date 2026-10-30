@@ -34,13 +34,8 @@ public sealed class RawMcpServerProcess : IAsyncDisposable
             UseShellExecute = false,
         };
 
-        startInfo.ArgumentList.Add("run");
-        startInfo.ArgumentList.Add("--project");
-        startInfo.ArgumentList.Add(TestRepo.ServerProjectPath());
-        startInfo.ArgumentList.Add("--framework");
-        startInfo.ArgumentList.Add("net9.0-windows10.0.19041.0");
-        startInfo.ArgumentList.Add("--no-build");
-        startInfo.ArgumentList.Add("--no-restore");
+        foreach (var argument in TestRepo.ServerRunArguments())
+            startInfo.ArgumentList.Add(argument);
 
         var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException("failed to start Windows-mcp test server process");
@@ -92,7 +87,7 @@ public sealed class RawMcpServerProcess : IAsyncDisposable
             ["method"] = "initialize",
             ["params"] = new JsonObject
             {
-                ["protocolVersion"] = Mcp20Protocol.Version,
+                ["protocolVersion"] = Mcp20Protocol.InitializeHandshakeVersion,
                 ["capabilities"] = new JsonObject(),
                 ["clientInfo"] = new JsonObject
                 {

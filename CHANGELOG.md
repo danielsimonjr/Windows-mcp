@@ -1,3 +1,20 @@
+## [Unreleased]
+
+### Fixed
+
+- The CI test step failed on every push to `main` from #30 (2026-08-31) on, so 0.7.4, 0.7.5 and
+  0.7.6 shipped with a red CI. Two defects in the MCP protocol tests caused it, and no other test
+  failed.
+  - The two protocol fixtures start the server with `dotnet run --no-build` and no configuration,
+    which starts the Debug build. CI builds only Release, so all five protocol tests failed to
+    start the server. `TestRepo.ServerRunArguments` now passes the configuration of the test
+    assembly, and both fixtures use it.
+  - Two tests assumed what the server refuses. A raw `initialize` named 2026-07-28, which the
+    server refuses through `initialize` (it lists 2024-11-05, 2025-03-26, 2025-06-18 and
+    2025-11-25), and the handshake test sent `ping` on 2026-07-28, which the server also refuses.
+    The raw fixture now initializes with 2025-11-25. The ping check moved into a new test that
+    connects with 2025-11-25 and checks the negotiated version.
+
 ## [0.7.6] - 2026-09-17
 
 ### Fixed
