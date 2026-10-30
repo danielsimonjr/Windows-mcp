@@ -14,7 +14,8 @@ public sealed class McpServerClientSession : IAsyncDisposable
 
     public McpClient Client { get; }
 
-    public static async Task<McpServerClientSession> StartAsync(CancellationToken ct = default)
+    public static async Task<McpServerClientSession> StartAsync(
+        string protocolVersion = Mcp20Protocol.Version, CancellationToken ct = default)
     {
         var stderrLines = new ConcurrentQueue<string>();
         var transport = new StdioClientTransport(
@@ -23,14 +24,7 @@ public sealed class McpServerClientSession : IAsyncDisposable
                 Name = "Windows-mcp protocol tests",
                 Command = "dotnet",
                 WorkingDirectory = TestRepo.Root(),
-                Arguments =
-                [
-                    "run",
-                    "--project", TestRepo.ServerProjectPath(),
-                    "--framework", "net9.0-windows10.0.19041.0",
-                    "--no-build",
-                    "--no-restore",
-                ],
+                Arguments = TestRepo.ServerRunArguments(),
                 ShutdownTimeout = TimeSpan.FromSeconds(5),
                 StandardErrorLines = stderrLines.Enqueue,
             },
@@ -42,7 +36,7 @@ public sealed class McpServerClientSession : IAsyncDisposable
                 transport,
                 new McpClientOptions
                 {
-                    ProtocolVersion = Mcp20Protocol.Version,
+                    ProtocolVersion = protocolVersion,
                     ClientInfo = new Implementation
                     {
                         Name = "WindowsMcp.Tests",

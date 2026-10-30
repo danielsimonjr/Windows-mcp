@@ -26,7 +26,19 @@ public class Mcp20ProtocolTests
         session.Client.ServerCapabilities.Prompts.Should().BeNull();
         session.Client.ServerCapabilities.Resources.Should().BeNull();
         session.Client.ServerCapabilities.Completions.Should().BeNull();
+    }
 
+    [Fact]
+    public async Task Ping_answers_on_the_initialize_handshake_revision()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        // The server refuses ping on Mcp20Protocol.Version, so ping is checked where a client
+        // that connects through initialize uses it.
+        await using var session = await McpServerClientSession.StartAsync(Mcp20Protocol.InitializeHandshakeVersion);
+
+        session.Client.NegotiatedProtocolVersion.Should().Be(Mcp20Protocol.InitializeHandshakeVersion);
         var ping = await session.Client.PingAsync();
         ping.Should().NotBeNull();
     }
