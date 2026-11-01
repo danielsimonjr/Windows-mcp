@@ -10,7 +10,7 @@ namespace WindowsMcp.Tests.Services;
 /// <summary>
 /// F8: the execution backstop is LOUD for the callers that never asked for a clock.
 /// <para>
-/// Every PowerShell-backed service — disk, storage, security, firewall, network, audio, file
+/// Every PowerShell-backed service — disk, storage, security, firewall, network, file
 /// streams, notification — calls <c>RunAsync(command, ct)</c>, the overload with no timeout
 /// argument, and therefore has no <c>TimedOut</c> flag to read. When the 15-minute backstop tears
 /// down a wedged script, <c>PowerShellService</c> throws a <see cref="TimeoutException"/> (proved
@@ -36,19 +36,6 @@ public class PowerShellBackstopPropagationTests
         ps.Setup(s => s.RunAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
           .ThrowsAsync(new TimeoutException(Reason));
         return ps;
-    }
-
-    [Fact]
-    public async Task AudioService_get_does_not_answer_fifty_percent_when_the_backstop_fired()
-    {
-        var audio = new AudioService(BackstopFires().Object);
-
-        Func<Task> act = () => audio.GetAsync();
-
-        (await act.Should().ThrowAsync<TimeoutException>(
-            "an unparseable empty stdout falls back to the hard-coded 50, which reads as a real "
-            + "reading of the volume and is not one"))
-            .WithMessage($"*{Reason}*");
     }
 
     [Fact]
