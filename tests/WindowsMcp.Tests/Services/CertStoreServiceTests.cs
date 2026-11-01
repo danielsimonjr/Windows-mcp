@@ -24,4 +24,11 @@ public class CertStoreServiceTests
         var act = () => new CertStoreService().ListAsync("Nowhere", "Root");
         await act.Should().ThrowAsync<ArgumentException>().WithMessage("*location*");
     }
+
+    [Fact]
+    public async Task ListAsync_rejects_an_unknown_store_name()
+    {
+        var act = () => new CertStoreService().ListAsync("LocalMachine", "NotARealStore");
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*store*");
+    }
 }

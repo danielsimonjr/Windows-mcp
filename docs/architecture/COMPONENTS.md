@@ -45,7 +45,7 @@ static async Task<int> RunStdioAsync(string[] args, ServerOptions options)
 
     var builder = Host.CreateApplicationBuilder(args);
     WindowsMcpHost.ConfigureStderrLogging(builder.Logging, http: false);  // stderr only, both modes;
-                                        //   each entry opens "yyyy-MM-dd HH:mm:ss.fff" (local)
+                                        //   each entry opens "yyyy-MM-dd HH:mm:ss.fff" (local; ':' quoted)
     builder.AddWindowsMcp(options)      // Hosting/WindowsMcpHost: all singletons + AddMcpServer(ServerInfo)
         .WithStdioServerTransport();    //   + ToolErrors call-tool filter + WithToolsFromAssembly()
     await builder.Build().RunAsync();

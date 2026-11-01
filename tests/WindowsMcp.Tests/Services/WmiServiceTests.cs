@@ -33,4 +33,14 @@ public class WmiServiceTests
         var props = (IDictionary<string, object>)rows[0];
         props["DeviceID"].Should().Be("C:");
     }
+
+    [Theory]
+    [InlineData("Win32_Process; DROP TABLE", "root\\cimv2", null)]
+    [InlineData("Win32_Process", "root\\cimv2; evil", null)]
+    [InlineData("Win32_Process", "root\\cimv2", "Name='x'; DELETE FROM Win32_Process")]
+    public void ValidateQuery_rejects_injection_patterns(string className, string? ns, string? where)
+    {
+        var act = () => WmiService.ValidateQuery(className, ns, where);
+        act.Should().Throw<ArgumentException>();
+    }
 }

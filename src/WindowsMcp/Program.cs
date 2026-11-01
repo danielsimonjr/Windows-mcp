@@ -18,6 +18,14 @@ internal static class Program
     internal static string ServerVersion { get; } =
         System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
 
+    /// <summary>
+    /// The one logging setup both transports share, forwarded to
+    /// <see cref="WindowsMcpHost.ConfigureStderrLogging"/>. Main's 0.7.7
+    /// <c>LoggingTests</c> call this name; stdio and HTTP both go through the host method.
+    /// </summary>
+    internal static void ConfigureLogging(Microsoft.Extensions.Logging.ILoggingBuilder logging)
+        => WindowsMcpHost.ConfigureStderrLogging(logging, http: false);
+
     public static async Task<int> Main(string[] args)
     {
         // Repair the environment before ANYTHING spawns a child: Claude Desktop launches stdio

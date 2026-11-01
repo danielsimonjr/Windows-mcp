@@ -59,6 +59,23 @@ public class UsnServiceTests
         changes.Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData("c", "C:")]
+    [InlineData("C:\\", "C:")]
+    [InlineData("", "C:")]
+    [InlineData("D:", "D:")]
+    public void NormalizeVolume_accepts_drive_letters(string input, string expected)
+        => UsnService.NormalizeVolume(input).Should().Be(expected);
+
+    [Theory]
+    [InlineData("12")]
+    [InlineData("CD")]
+    public void NormalizeVolume_rejects_invalid(string input)
+    {
+        var act = () => UsnService.NormalizeVolume(input);
+        act.Should().Throw<ArgumentException>();
+    }
+
     private static byte[] BuildBuffer(long nextUsn, string name, long usn, uint reason)
     {
         var rec = BuildRecord(name, usn, reason);

@@ -2,6 +2,11 @@
 
 ### Added
 
+- **MCP 2.0 conformance smoke suite** (`tests/WindowsMcp.Tests/Protocol/Mcp20ProtocolTests.cs`)
+  from main: handshake, `ping`, `tools/list`, `tools/call`, caller-facing tool errors, and
+  JSON-RPC method-not-found, against the real stdio server. `TestRepo` locates the repo by
+  `Windows-mcp.slnx` and starts the net10.0-windows build under test.
+
 - **`scrape` reads the open browser tab, caps what it returns, and can summarise through your own
   client's model** (parity C-5, roadmap R8). `scrape(url?, query?, source = "http",
   summarize = false, max_chars = 100000, window?)` answers with JSON
@@ -432,19 +437,19 @@
   formatter, so each `ILogger` entry starts with the time to the millisecond and keeps its
   two-line layout — `2026-10-20 14:03:27.512 info: WindowsMcp.Services.ScreenshotService[0]`,
   then the message indented on the next line — where it used to carry no time at all, so a
-  stderr line could not be tied to when it happened. The stamp format (`yyyy-MM-dd HH:mm:ss.fff`),
-  local rather than UTC time, the two-line layout and the absence of scope lines are pinned in
+  stderr line could not be tied to when it happened. The stamp format
+  (`yyyy-MM-dd HH':'mm':'ss.fff`) quotes its `:` characters as literals so the stamp is the
+  same in every culture (an unquoted `:` is the culture's time separator — `.` in fi-FI).
+  Local rather than UTC time, the two-line layout and the absence of scope lines are pinned in
   code after configuration binds, so `Logging__Console__FormatterOptions__*` variables and a
   working-directory `appsettings.json` cannot change them (`ColorBehavior` stays configurable);
   `Logging:Console:FormatterName` (e.g. `Logging__Console__FormatterName=json`) and the deprecated
   `Logging:Console:TimestampFormat` / `IncludeScopes` / `DisableColors` / `UseUtcTimestamp` keys,
   which used to take effect, no longer change the format. Every level still goes to stderr, never
-  stdout. The stamp is rendered in the machine's current culture — .NET exposes no override — so
-  a culture whose time separator is not `:` prints its own (fi-FI: `14.03.27.512`). The lines
-  `Program.cs` writes straight to stderr at startup (environment repair, the refusals, the
-  plain-HTTP warning) are not `ILogger` output and stay unstamped. Covered in
-  `WindowsMcpHostTests`, including the real HTTP host and the stdio host's builder. No new
-  service, no new tool.
+  stdout. The lines `Program.cs` writes straight to stderr at startup (environment repair, the
+  refusals, the plain-HTTP warning) are not `ILogger` output and stay unstamped. Covered in
+  `WindowsMcpHostTests` (both hosts) and `LoggingTests` (stamp, fi-FI culture, stderr-only).
+  No new service, no new tool.
 - **`scrape` returns a JSON result object, not a markdown string** (parity C-5 — a contract
   change). The tool used to answer with the converted markdown and nothing else; it now returns
   `{Source, Url, Title, Chars, Truncated, Content, Summarized, Model, Note}` with the text in

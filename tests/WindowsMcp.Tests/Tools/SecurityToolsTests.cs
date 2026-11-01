@@ -35,4 +35,35 @@ public class SecurityToolsTests
 
         inspector.Verify(i => i.Inspect(@"C:\unknown.bin"), Times.Once);
     }
+
+    [Fact]
+    public async Task DefenderStatus_serializes()
+    {
+        var security = new Mock<ISecurityService>();
+        security.Setup(s => s.GetDefenderStatusAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DefenderStatusDto(true, true, true, true, "1.2.3", null, null, null));
+        var tools = new SecurityTools(new Mock<IAuthenticodeInspector>().Object, security.Object, new Mock<ICertStoreService>().Object);
+
+        var json = await tools.DefenderStatus();
+
+        json.Should().Contain("true").And.Contain("1.2.3");
+        security.Verify(s => s.GetDefenderStatusAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CertStore_dispatches()
+    {
+        var store = new Mock<ICertStoreService>();
+        store.Setup(s => s.ListAsync("LocalMachine", "Root", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[]
+            {
+                new CertInfoDto("CN=Test", "CN=Test", "ABC", DateTime.UtcNow.AddYears(1), true, false)
+            });
+        var tools = new SecurityTools(new Mock<IAuthenticodeInspector>().Object, new Mock<ISecurityService>().Object, store.Object);
+
+        var json = await tools.CertStore();
+
+        json.Should().Contain("ABC").And.Contain("CN=Test");
+        store.Verify(s => s.ListAsync("LocalMachine", "Root", It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

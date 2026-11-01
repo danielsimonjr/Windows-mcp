@@ -418,7 +418,7 @@ public class WindowsMcpHostTests
     //         capture 1920x1080 in 42 ms
 
     /// <summary>Date, then time to the millisecond; the trailing space separates it from the level.</summary>
-    private const string LogTimestampFormat = "yyyy-MM-dd HH:mm:ss.fff ";
+    private const string LogTimestampFormat = "yyyy-MM-dd HH':'mm':'ss.fff ";
 
     private const string LogCategory = "WindowsMcp.Services.ScreenshotService";
     private const string LogMessage = "capture 1920x1080 in 42 ms";

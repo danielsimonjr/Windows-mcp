@@ -4,6 +4,11 @@ An MCP server for Windows desktop automation, written in C# on the official
 [`ModelContextProtocol`](https://www.nuget.org/packages/ModelContextProtocol)
 SDK. See [Tool reference](#tool-reference) for the 69 tools.
 
+> **History:** Versions 0.x through 0.8.5 were written in Python. v0.2.0 (2026-05-26)
+> is a complete C# rewrite — see [CHANGELOG.md](CHANGELOG.md) for the migration
+> notes. The Python source tree is preserved in
+> `legacy/python-pre-csharp-conversion-archive-2026-05-26.zip`.
+
 ## Build
 
 ```powershell
@@ -153,6 +158,34 @@ or in `.mcp.json`:
 ```
 
 The host name in the URL must match the certificate's `-DnsName`.
+
+## MCP 2.0 support
+
+This server's MCP surface is intentionally **tools-only over stdio**, implemented by
+the official `ModelContextProtocol` **2.2.0** SDK and pinned to the
+**2026-07-28** protocol revision in the conformance tests.
+
+What is verified:
+
+- server handshake and server info
+- tools capability advertisement
+- `tools/list` schema generation and complete-result shape
+- `tools/call` success/error behavior and text content blocks
+- JSON-RPC method-not-found handling
+
+What this server intentionally does **not** expose:
+
+- prompts
+- resources / resource templates / subscriptions
+- completions
+- roots
+- sampling / elicitation
+- logging configuration
+- HTTP transport
+
+The repeatable smoke suite lives in
+`tests/WindowsMcp.Tests/Protocol/Mcp20ProtocolTests.cs`
+and runs as part of `dotnet test` on Windows.
 
 ## Companion skill
 
@@ -384,6 +417,7 @@ for the `bundle/` folder.
 dotnet build                                       # incremental
 dotnet test --filter "Category=Unit"               # fast loop (mocked, seconds)
 dotnet test --filter "Category=Integration"        # exercises real Windows APIs
+dotnet test --filter "Protocol=Mcp20"              # MCP 2.0 conformance smoke suite
 dotnet test --filter "Category=UIAutomation"       # needs an interactive desktop (Notepad fixture, real input injection)
 dotnet test                                        # full suite
 ```

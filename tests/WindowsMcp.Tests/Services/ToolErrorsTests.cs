@@ -29,6 +29,13 @@ public class ToolErrorsTests
         // Process.GetProcessById on a dead PID — also actionable for the caller.
         ToolErrors.IsCallerFacing(new ArgumentException("Process with an Id of 999999 is not running."))
             .Should().BeTrue();
+
+        ToolErrors.IsCallerFacing(new KeyNotFoundException("Registry path not found"))
+            .Should().BeTrue();
+        ToolErrors.IsCallerFacing(new DirectoryNotFoundException("Watch path not found"))
+            .Should().BeTrue();
+        ToolErrors.IsCallerFacing(new NotSupportedException("middle-button drag not supported"))
+            .Should().BeTrue();
     }
 
     [Theory]

@@ -114,33 +114,50 @@ public static class StartupReportRenderer
         sb.AppendLine($"  appInitDlls={r.AppInitDlls.Length} activeSetup={r.ActiveSetup.Length} proxy={r.BrowserProxy.Length} " +
                       $"trustedZone={r.TrustedZone.Length} errors={r.Errors.Length}");
 
-        var flagged = new List<string>();
-        void Consider(bool trusted, bool targetExists, string line)
+        var high = new List<string>();
+        var medium = new List<string>();
+        var low = new List<string>();
+        void Consider(bool trusted, bool targetExists, string line, string? pathHint = null, bool persistenceHook = false)
         {
             if (trusted && targetExists) return;
-            string note = (targetExists ? "" : "MISSING ") + (trusted ? "" : "UNTRUSTED");
-            flagged.Add($"{line}  [{note.Trim()}]");
+            if (persistenceHook)
+            {
+                high.Add($"[HIGH persistence-hook] {line}");
+                return;
+            }
+            if (!targetExists)
+            {
+                var ms = LooksLikeMicrosoftPath(pathHint);
+                if (ms)
+                    low.Add($"[LOW ms-file-missing] {line}");
+                else
+                    high.Add($"[HIGH missing-target] {line}");
+                return;
+            }
+            medium.Add($"[MEDIUM untrusted-third-party] {line}");
         }
-        foreach (var e in r.Processes) Consider(e.Trusted, true, $"[process] {e.Name} {e.Path}");
-        foreach (var e in r.RunEntries) Consider(e.Trusted, e.TargetExists, $"[run] {e.Hive} {e.Name} = {e.Command}");
-        foreach (var e in r.StartupFolders) Consider(e.Trusted, e.TargetExists, $"[startupFolder] {e.Scope} {e.FileName} -> {e.Target}");
-        // Tasks with no exec action (COM-handler tasks) have no executable to verify — skip them
-        // rather than flagging benign Microsoft handler tasks as missing/untrusted.
+        foreach (var e in r.Processes) Consider(e.Trusted, true, $"[process] {e.Name} {e.Path}", e.Path);
+        foreach (var e in r.RunEntries) Consider(e.Trusted, e.TargetExists, $"[run] {e.Hive} {e.Name} = {e.Command}", e.Command);
+        foreach (var e in r.StartupFolders) Consider(e.Trusted, e.TargetExists, $"[startupFolder] {e.Scope} {e.FileName} -> {e.Target}", e.Target);
         foreach (var e in r.ScheduledTasks)
-            if (!string.IsNullOrEmpty(e.ActionPath)) Consider(e.Trusted, e.TargetExists, $"[task] {e.Path} -> {e.ActionPath}");
-        foreach (var e in r.Services) Consider(e.Trusted, true, $"[service] {e.Name} -> {e.BinaryPath}");
-        foreach (var e in r.Lsp) Consider(e.Trusted, true, $"[lsp] #{e.CatalogEntryId} {e.ProtocolName} -> {e.ProviderPath}");
-        foreach (var e in r.ShellExtensions) Consider(e.Trusted, true, $"[shellExt] {e.Category} {e.Clsid} -> {e.Dll}");
-        foreach (var e in r.ControlPanelApplets) Consider(e.Trusted, e.TargetExists, $"[cpl] {e.Source} {e.Name} -> {e.Path}");
-        foreach (var e in r.AccessibilityTools) Consider(e.Trusted, e.TargetExists, $"[at] {e.Name} -> {e.StartExe}");
-        foreach (var e in r.ImageFileExecutionOptions) Consider(e.Trusted, e.TargetExists, $"[ifeo] {e.Image} [{e.Kind}] = {e.Value}");
-        foreach (var e in r.WinlogonHooks) Consider(e.Trusted, e.TargetExists, $"[winlogon] {e.Name} = {e.Value}");
-        foreach (var e in r.AppInitDlls) Consider(e.Trusted, e.TargetExists, $"[appinit] {e.Scope} {e.Dll}");
-        foreach (var e in r.ActiveSetup) Consider(e.Trusted, e.TargetExists, $"[activeSetup] {e.Hive} {e.Component} -> {e.StubPath}");
+            if (!string.IsNullOrEmpty(e.ActionPath)) Consider(e.Trusted, e.TargetExists, $"[task] {e.Path} -> {e.ActionPath}", e.ActionPath);
+        foreach (var e in r.Services) Consider(e.Trusted, true, $"[service] {e.Name} -> {e.BinaryPath}", e.BinaryPath);
+        foreach (var e in r.Lsp) Consider(e.Trusted, true, $"[lsp] #{e.CatalogEntryId} {e.ProtocolName} -> {e.ProviderPath}", e.ProviderPath);
+        foreach (var e in r.ShellExtensions) Consider(e.Trusted, true, $"[shellExt] {e.Category} {e.Clsid} -> {e.Dll}", e.Dll);
+        foreach (var e in r.ControlPanelApplets) Consider(e.Trusted, e.TargetExists, $"[cpl] {e.Source} {e.Name} -> {e.Path}", e.Path);
+        foreach (var e in r.AccessibilityTools) Consider(e.Trusted, e.TargetExists, $"[at] {e.Name} -> {e.StartExe}", e.StartExe);
+        foreach (var e in r.ImageFileExecutionOptions) Consider(e.Trusted, e.TargetExists, $"[ifeo] {e.Image} [{e.Kind}] = {e.Value}", e.Value, persistenceHook: true);
+        foreach (var e in r.WinlogonHooks) Consider(e.Trusted, e.TargetExists, $"[winlogon] {e.Name} = {e.Value}", e.Value, persistenceHook: true);
+        foreach (var e in r.AppInitDlls) Consider(e.Trusted, e.TargetExists, $"[appinit] {e.Scope} {e.Dll}", e.Dll, persistenceHook: true);
+        foreach (var e in r.ActiveSetup) Consider(e.Trusted, e.TargetExists, $"[activeSetup] {e.Hive} {e.Component} -> {e.StubPath}", e.StubPath);
 
         sb.AppendLine();
-        sb.AppendLine($"== Flagged: untrusted or missing target ({flagged.Count}) ==");
-        foreach (var f in flagged) sb.AppendLine($"  {f}");
+        sb.AppendLine($"== Flagged HIGH missing-target / persistence hooks ({high.Count}) ==");
+        foreach (var f in high) sb.AppendLine($"  {f}");
+        sb.AppendLine($"== Flagged MEDIUM untrusted-third-party ({medium.Count}) ==");
+        foreach (var f in medium) sb.AppendLine($"  {f}");
+        sb.AppendLine($"== Flagged LOW ms-file-missing ({low.Count}) ==");
+        foreach (var f in low) sb.AppendLine($"  {f}");
 
         if (r.BrowserProxy.Length > 0 || r.TrustedZone.Length > 0)
         {
@@ -172,4 +189,15 @@ public static class StartupReportRenderer
 
     private static string Sig(bool trusted, string? signer) =>
         trusted ? $"trusted={(signer is null ? "Y" : signer)}" : "trusted=N";
+
+    internal static bool LooksLikeMicrosoftPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        var p = path.Replace('/', '\\').ToLowerInvariant();
+        return p.Contains(@"\windows\system32\")
+            || p.Contains(@"\windows\syswow64\")
+            || p.Contains(@"\windows\winsxs\")
+            || p.Contains(@"\program files\windows")
+            || p.Contains(@"\program files (x86)\windows");
+    }
 }

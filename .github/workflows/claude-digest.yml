@@ -1,0 +1,36 @@
+name: Claude Digest
+
+on:
+  schedule:
+    - cron: '0 14 * * 1'   # Mondays 14:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build + send digest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          since=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          opened=$(gh search prs --repo "$REPO" --author 'app/claude-bot' --created ">=$since" \
+            --json number,title,state,url --jq '[.[] | "• #\(.number) [\(.state)] \(.title)"] | join("\n")')
+          [ -z "$opened" ] && opened="(none)"
+          msg=$(printf 'Windows-mcp — claude-bot digest (7d)\n\nPRs:\n%s' "$opened")
+          if [ -n "${TG_TOKEN:-}" ] && [ -n "${TG_CHAT:-}" ]; then
+            curl -sS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+              --data-urlencode "chat_id=${TG_CHAT}" \
+              --data-urlencode "text=${msg}" >/dev/null
+          else
+            echo "Telegram secrets not set; writing digest to summary only."
+          fi
+          echo "$msg" >> "$GITHUB_STEP_SUMMARY"

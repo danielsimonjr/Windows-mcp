@@ -42,7 +42,8 @@ internal static class ToolErrors
             or KeyNotFoundException
             or IOException            // FileNotFound, DirectoryNotFound, PathTooLong, "in use"
             or UnauthorizedAccessException
-            or TimeoutException;
+            or TimeoutException
+            or NotSupportedException;
 
     /// <summary>The message the client sees: word for word up to <see cref="MaxMessageLength"/>, then cut with a marker.</summary>
     public static string MessageFor(Exception ex)

@@ -48,7 +48,10 @@ internal static class WindowsMcpHost
         // here, after config binding; ColorBehavior stays configurable (cosmetic, stderr only).
         logging.AddSimpleConsole(o =>
         {
-            o.TimestampFormat = "yyyy-MM-dd HH:mm:ss.fff ";
+            // Quoted ':' is a literal. An unquoted ':' is the culture's time separator
+            // (fi-FI prints '.'), so the stamp must quote both colons to read the same
+            // on every machine — the 0.7.7 fix from main, kept on this host method.
+            o.TimestampFormat = "yyyy-MM-dd HH':'mm':'ss.fff ";
             o.UseUtcTimestamp = false;
             o.SingleLine = false;
             o.IncludeScopes = false;

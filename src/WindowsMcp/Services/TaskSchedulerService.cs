@@ -42,6 +42,15 @@ public sealed class TaskSchedulerService : ITaskSchedulerService
                     actionPath = exec.Path;
                     actionArgs = string.IsNullOrEmpty(exec.Arguments) ? null : exec.Arguments;
                 }
+                else
+                {
+                    var com = def.Actions.OfType<ComHandlerAction>().FirstOrDefault();
+                    if (com is not null)
+                    {
+                        actionPath = ComHandlerResolver.Resolve(com.ClassId) ?? $"CLSID:{com.ClassId:B}";
+                        actionArgs = string.IsNullOrEmpty(com.Data) ? null : com.Data;
+                    }
+                }
                 triggers = def.Triggers.Select(tr => tr.TriggerType.ToString()).Distinct().ToArray();
             }
             catch
@@ -78,9 +87,7 @@ public sealed class TaskSchedulerService : ITaskSchedulerService
         using var ts = new TaskService();
         var td = ts.NewTask();
         td.Actions.Add(new ExecAction(command));
-        // InvariantCulture: MCP tool args arrive as locale-neutral JSON strings;
-        // thread culture could otherwise parse "05/06/2026" differently on en-US vs en-GB.
-        td.Triggers.Add(new TimeTrigger(DateTime.Parse(trigger, System.Globalization.CultureInfo.InvariantCulture)));
+        td.Triggers.Add(ParseTrigger(trigger));
         ts.RootFolder.RegisterTaskDefinition(name, td);
         return SystemTask.CompletedTask;
     }
@@ -91,5 +98,24 @@ public sealed class TaskSchedulerService : ITaskSchedulerService
         using var ts = new TaskService();
         ts.RootFolder.DeleteTask(name);
         return SystemTask.CompletedTask;
+    }
+
+    internal static Trigger ParseTrigger(string trigger)
+    {
+        if (string.IsNullOrWhiteSpace(trigger))
+            throw new ArgumentException("Trigger cannot be empty");
+
+        return trigger.Trim().ToLowerInvariant() switch
+        {
+            "daily" => new DailyTrigger(),
+            "onlogon" or "logon" => new LogonTrigger(),
+            "onboot" or "boot" => new BootTrigger(),
+            "onidle" or "idle" => new IdleTrigger(),
+            _ when DateTime.TryParse(trigger, System.Globalization.CultureInfo.InvariantCulture,
+                       System.Globalization.DateTimeStyles.RoundtripKind, out var when)
+                => new TimeTrigger(when),
+            _ => throw new ArgumentException(
+                $"Unknown trigger '{trigger}'; expected daily|onlogon|onboot|onidle or an ISO-8601 datetime")
+        };
     }
 }

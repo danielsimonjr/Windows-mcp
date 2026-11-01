@@ -18,6 +18,7 @@ public sealed class FileSystemService : IFileSystemService
     public async Task<string> ReadTextAsync(string path, long maxBytes, string encoding, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        path = PathPolicy.Normalize(path);
         var info = new FileInfo(path);
         if (info.Length > maxBytes)
             throw new InvalidOperationException($"File size {info.Length} exceeds max_bytes {maxBytes}");
@@ -35,6 +36,7 @@ public sealed class FileSystemService : IFileSystemService
     public async Task<byte[]> ReadBytesAsync(string path, long maxBytes, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        path = PathPolicy.Normalize(path);
         var info = new FileInfo(path);
         if (info.Length > maxBytes)
             throw new InvalidOperationException($"File size {info.Length} exceeds max_bytes {maxBytes}");
@@ -44,6 +46,7 @@ public sealed class FileSystemService : IFileSystemService
     public async Task WriteTextAsync(string path, string content, string encoding, bool append, bool createParents, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        path = PathPolicy.Normalize(path);
         var enc = encoding.ToLowerInvariant() switch
         {
             "utf-16" => Encoding.Unicode,
@@ -99,6 +102,7 @@ public sealed class FileSystemService : IFileSystemService
     public Task<FileInfoDto> GetInfoAsync(string path, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        path = PathPolicy.Normalize(path);
         FileSystemInfo info = Directory.Exists(path)
             ? new DirectoryInfo(path)
             : new FileInfo(path);
@@ -116,11 +120,15 @@ public sealed class FileSystemService : IFileSystemService
     public Task<FileSearchHit[]> SearchAsync(string root, string? pattern, long? minSize, DateTime? modifiedSince, bool findDuplicates, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        root = PathPolicy.Normalize(root);
+        if (!Directory.Exists(root))
+            throw new ArgumentException($"Search root does not exist: {root}");
         var hits = new List<FileSearchHit>();
         var files = Directory.EnumerateFiles(root, pattern ?? "*", SearchOption.AllDirectories);
         foreach (var f in files)
         {
             ct.ThrowIfCancellationRequested();
+            if (hits.Count >= PathPolicy.MaxSearchHits) break;
             try
             {
                 var info = new FileInfo(f);
@@ -155,6 +163,7 @@ public sealed class FileSystemService : IFileSystemService
 
     public async Task<string> HashFileAsync(string path, string algorithm = "sha256", CancellationToken ct = default)
     {
+        path = PathPolicy.Normalize(path);
         using System.Security.Cryptography.HashAlgorithm hasher = algorithm.ToLowerInvariant() switch
         {
             "sha256" => System.Security.Cryptography.SHA256.Create(),
@@ -814,6 +823,8 @@ public sealed class FileSystemService : IFileSystemService
     public Task UnzipAsync(string srcZip, string dstDir, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        srcZip = PathPolicy.Normalize(srcZip);
+        dstDir = PathPolicy.Normalize(dstDir);
         ZipFile.ExtractToDirectory(srcZip, dstDir, overwriteFiles: true);
         return Task.CompletedTask;
     }

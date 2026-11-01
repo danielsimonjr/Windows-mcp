@@ -135,11 +135,13 @@ public sealed class UsnService : IUsnService
         return h;
     }
 
-    private static string NormalizeVolume(string volume)
+    internal static string NormalizeVolume(string volume)
     {
         var v = (volume ?? "C").Trim().TrimEnd('\\', '/').TrimEnd(':');
         if (v.Length == 0) v = "C";
-        return string.Concat(v.AsSpan(0, 1).ToString().ToUpperInvariant(), ":");
+        if (v.Length != 1 || !char.IsAsciiLetter(v[0]))
+            throw new ArgumentException($"Invalid volume '{volume}'; expected a drive letter like C");
+        return char.ToUpperInvariant(v[0]) + ":";
     }
 
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
