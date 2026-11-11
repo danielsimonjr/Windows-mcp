@@ -1455,10 +1455,13 @@ before any input is sent.
 
 **Ours today.** `find_element` matches a case-insensitive substring of the element's Name, filtered
 by four coarse kinds, and returns at most 20 with no way to ask for the rest. `ElementInfo` carries
-no AutomationId and no ClassName, so two identically named controls cannot be told apart, an
-unnamed control (most icon buttons) cannot be found at all, and a search cannot be confined to a
-dialog or pane the client already holds an id for. `snapshot` has the same limit: its scopes are
-desktop, foreground and window.
+no AutomationId and no ClassName, so two identically named controls cannot be told apart and a
+search cannot be confined to a dialog or pane the client already holds an id for. Discovery itself
+works: an empty `text` matches every element the kind and scope allow, so an unnamed control (most
+icon buttons) does come back — but only as one of up to 20 anonymous rows the client must tell
+apart by bounds, with no way to ask for *that* control by a stable property. What is missing is
+precise targeting and paging, not the ability to see the control. `snapshot` has the same limit:
+its scopes are desktop, foreground and window.
 
 **Sketch.** `ElementInfo` gains `AutomationId` and `ClassName` (omitted from JSON when empty, so
 existing output is unchanged). `find_element` gains `automation_id` (exact), `control_type`
@@ -1472,9 +1475,11 @@ walks one subtree — its own item if it grows.
 `Tools/UIAutomationTools.cs`.
 
 **Tests.** Each filter alone and combined; `within` on a stale id; paging is stable across two
-calls on an unchanged tree; an empty `text` with `automation_id` finds an unnamed control.
+calls on an unchanged tree; an empty `text` with `automation_id` returns exactly the one unnamed
+control, not the first 20 of everything.
 
-**Done when.** An unnamed toolbar button is found by automation id inside a named dialog.
+**Done when.** An unnamed toolbar button is addressed directly by automation id inside a named
+dialog, as a single match.
 
 ### E-5 — `observe`: action tools return the state they produced  `P1 · M`
 - [ ] Not started
@@ -1553,12 +1558,17 @@ on that word.
 ### E-8 — Session state: elevation, lock, secure desktop  `P2 · S–M`
 - [ ] Not started
 
-**Ours today.** The server runs unelevated and says so only in documentation; `IsElevated()` exists
-but is private to `StartupReportService`. Nothing reports whether the workstation is locked, the
-session disconnected, or a UAC prompt is up on the secure desktop. In each case `snapshot` returns
-an empty or stale tree and input goes nowhere, with nothing telling the model why.
+**Ours today.** Elevation is already caller-visible, but only as a by-product: `startup_report`
+puts `IsElevated()` in its header, and the default summary and the JSON both print `Elevated`. That
+is a full autorun inventory run to read one boolean, and the probe is private to
+`StartupReportService`. (The server normally runs unelevated but can be launched elevated, so the
+answer is not a constant.) What nothing reports is whether the workstation is locked, the session
+disconnected, or a UAC prompt is up on the secure desktop. In each of those cases `snapshot`
+returns an empty or stale tree and input goes nowhere, with nothing telling the model why.
 
-**Sketch.** `system_info(category:"session")` → `{Elevated, IntegrityLevel, UserName, SessionId,
+**Sketch.** A lightweight session probe plus the missing lock and desktop diagnostics; share the
+elevation check with `StartupReportService` instead of duplicating it.
+`system_info(category:"session")` → `{Elevated, IntegrityLevel, UserName, SessionId,
 Interactive, Locked, InputDesktop}`. `snapshot` adds a one-line note when the input desktop is not
 the user's (`OpenInputDesktop` fails or names `Winlogon`) — the UAC and lock-screen cases — so the
 model stops and tells the user. No elevation is ever attempted: this item reports, it does not
