@@ -1,7 +1,8 @@
 # Windows-mcp — todo
 
 Cross-session task tracker. Shipped work is recorded in `CHANGELOG.md`. The feature backlog
-against the upstream Python server (51 prioritized items with implementation sketches) is
+against the upstream Python server, plus the agent-efficiency backlog in its section E (66
+prioritized items with implementation sketches), is
 `docs/upstream-parity-checklist.md` — new capability work starts there, not here.
 
 ## 🧪 Live e2e coverage sweep — ACTIVE (20/69 tools ever exercised against a live server)

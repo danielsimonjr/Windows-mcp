@@ -10,13 +10,14 @@ then all of section B and all of section C (C-7, C-4, C-2, C-3, C-1, C-6, C-5).
 SDK `ModelContextProtocol` 2.2.0.
 **Status:** Living document — check items off as they ship.
 
-This is the working list of everything upstream can do that this server cannot (plus nine
+This is the working list of everything upstream can do that this server cannot (plus eleven
 defects: D-1…D-4 from the original comparison, D-5…D-9 added later under rule 4 — **all nine are
-now fixed**; section A's phase 1 — A-7, A-9, A-8, A-11 and A-13 — is done, phase 2 shipped A-1,
+now fixed** — and D-10/D-11, logged 2026-11-10 and still open; section A's phase 1 — A-7, A-9, A-8, A-11 and A-13 — is done, phase 2 shipped A-1,
 phase 3 shipped A-2 with A-3 and A-4 inside it, phase 4 shipped A-6, and phase 5 shipped A-14,
 A-12 phase 1, A-10 and A-5 phase 1 — so every section-A row is ticked, with only A-5's Firefox
 phase left open and A-12's phase 2 deliberately not planned; section B is ticked too, and
-C-5/C-6 close section C — section S is the work that is left).
+C-5/C-6 close section C — section S, D-10/D-11 and section E are the work that is left; section E
+is not upstream parity but an agent-efficiency backlog from a review of this server's own tools).
 Each item carries enough context to write a design note and an implementation plan without re-reading
 upstream from scratch: what upstream does and where, what we do today and where, an
 implementation sketch, files to touch, tests, and a "done when" bar.
@@ -113,12 +114,25 @@ function names are the stable anchor.
 | S-9 | Claude Desktop Extension (`.mcpb`) + registry `server.json` | P3 | M | — | ☐ |
 | S-10 | Per-tool black-box tester skill | P3 | S | — | ☐ |
 | S-11 | AI-control indicator + takeover hotkey (indicator only — no gating) | P2 | M | A-14 · [S-11](design/S-11-control-indicator.md) | ☑ on its branch, not yet merged |
+| D-10 | `interact_element`'s "pattern not supported" refusal is masked from the caller | P1 | S | — | ☐ |
+| D-11 | Element cache grows without bound outside `snapshot` | P1 | S | — | ☐ |
+| E-1 | Server instructions in the MCP handshake | P1 | S | — | ☐ |
+| E-2 | `interact_element`: expand, collapse, set_value, scroll_into_view | P1 | S | D-10 | ☐ |
+| E-3 | `click` modifiers; `key` repeat and hold | P2 | S | — | ☐ |
+| E-4 | `find_element` filters: automation id, control type, class, within, paging | P2 | M | — | ☐ |
+| E-5 | `observe`: action tools return the state they produced | P1 | M | D-11 | ☐ |
+| E-6 | `sequence`: an ordered batch of UI steps in one call | P2 | M | E-5, S-11 | ☐ |
+| E-7 | Capture by window / element; OCR word positions | P2 | M | — | ☐ |
+| E-8 | Session state: elevation, lock, secure desktop | P2 | S–M | — | ☐ |
+| E-9 | `file_edit` and content search for remote hosts | P2 | M | — | ☐ |
+| E-10 | Named toolsets on top of S-1 | P3 | S | S-1 | ☐ |
+| E-11 | Stable element ids and a snapshot diff | P3 | L | E-5, D-11 | ☐ |
 
-**Suggested order.** **All defects (D-1 … D-9) are done** — the D section is closed — and **so are
-sections A, B and C** (A-5's Firefox phase and D-2's `interact_element(type) clear` are the open
-sub-items; A-12's phase 2 is not planned). What is left is section S: S-11 (the control
-indicator) is done on `feature/control-indicator`; the quick wins S-8 and S-1 can be interleaved
-anywhere; S-4 last.
+**Suggested order.** **Defects D-1 … D-9 are done** (D-10 and D-11, logged 2026-11-10, are open —
+see the section-E paragraph below), and **so are sections A, B and C** (A-5's Firefox phase and
+D-2's `interact_element(type) clear` are the open sub-items; A-12's phase 2 is not planned). What
+is left of the parity work is section S: S-11 (the control indicator) is done on
+`feature/control-indicator`; the quick wins S-8 and S-1 can be interleaved anywhere; S-4 last.
 The section-A sequencing, cross-item decisions (coordinate space, defaults, tool count, element
 ids, env vars) and per-item test seeds are in [`docs/design/A-roadmap.md`](design/A-roadmap.md).
 The section-B plan (four phases, the element-target resolver, window matcher, typing planner and
@@ -126,6 +140,13 @@ app-catalog decisions, per-item test seeds) is in [`docs/design/B-roadmap.md`](d
 The section-C plan (three phases, the safer file defaults, the registry denylist, in-process toasts,
 opt-in sampling and the annotation table, per-item test seeds) is in
 [`docs/design/C-roadmap.md`](design/C-roadmap.md).
+
+**Section E (added 2026-11-10) is not upstream parity.** It comes from a review of this server's
+own tool surface for how many round trips and tokens an AI client spends driving it, and the same
+review logged D-10 and D-11. Order: D-10 and D-11 first (E-2 and E-5 depend on them), then E-1,
+E-2, E-3, E-4, E-5, E-6, E-7, E-8, E-9, E-10. E-11 is last and conditional: measure the snapshot
+cost after E-5 before committing to it. `todo.md` still records every UI-automation tool as never
+verified live — that sweep outranks any E item that builds on those tools.
 
 ---
 
@@ -459,6 +480,59 @@ no complete document still passes through raw.
 
 **Done when.** `job output` on a finished job that emitted warnings returns prefixed text, not
 `<Objs`; a running job's tail is no worse than today.
+
+---
+
+### D-10 — `interact_element`'s "pattern not supported" refusal is masked from the caller  `P1 · S`
+- [ ] Not started
+
+**Found by the 2026-11-10 tool-surface review** (read from the source, not reproduced live).
+
+**Ours today.** `UIAutomationService.NotSupported()` builds a `NotSupportedException` naming the
+pattern and the control (`"TogglePattern not supported on Button 'Save'."`), and `invoke`, `toggle`
+and `select` throw it. `ToolErrors.IsCallerFacing` does not list `NotSupportedException`, so the
+call-tool filter in `WindowsMcpHost.AddWindowsMcp` lets the SDK flatten it to `"An error occurred
+invoking 'interact_element'."`. The tool's `[Description]` promises the opposite ("an unsupported
+pattern errors naming the control type"), and the caller cannot tell a wrong verb from a crash.
+
+**Sketch.** Throw `InvalidOperationException` from `NotSupported()` — a deliberate refusal belongs
+to the caller-facing set (`CLAUDE.md` "Caller-facing errors"). Fix the family, not the case: grep
+`src/` for every other `NotSupportedException` and bare `Exception` thrown as a refusal.
+
+**Touches.** `Services/UIAutomationService.cs`, any sibling found by the grep,
+`tests/.../Services/UIAutomationServiceTests.cs`, a `ToolErrorsTests` case.
+
+**Tests.** A fake element with no TogglePattern: `toggle` surfaces the message with the control
+type and name through the call-tool filter, not the masked text.
+
+**Done when.** `interact_element(action:"toggle")` on a plain button returns `IsError` with the
+pattern and the control named.
+
+### D-11 — Element cache grows without bound outside `snapshot`  `P1 · S`
+- [ ] Not started
+
+**Found by the 2026-11-10 tool-surface review.** The header comment of `UIAutomationService.cs`
+already records it as a v0.3.0 TODO that never landed.
+
+**Ours today.** `ToInfo()` mints an `el_N` id and stores the `AutomationElement` in `_elementCache`
+on every call. Only ids issued by `SnapshotAsync` are tracked in `_snapshotIds` and evicted by the
+next snapshot. Every `find_element` match, every `get_state` node, every `get_element`, and every
+element-targeted `click`/`type`/`scroll`/`drag` (each resolves through `GetElementAsync`, which
+re-mints) adds an entry that lives until the process exits. On a long-running HTTP host that is an
+unbounded set of live COM references.
+
+**Sketch.** A bounded LRU over the non-snapshot ids (a cap in `UiTreeOptions`, default a few
+thousand), and stop `GetElementAsync` minting a second id for an element that already has one.
+An evicted id answers `KeyNotFoundException` saying it expired and to re-`snapshot` — not "not in
+cache". Snapshot ids keep their evict-on-next-snapshot rule.
+
+**Touches.** `Services/UIAutomationService.cs`, `Abstractions/Models/UIAutomationDtos.cs`
+(`UiTreeOptions`), `tests/.../Services/UIAutomationServiceTests.cs`.
+
+**Tests.** N+1 lookups past the cap evict the oldest; a snapshot id survives non-snapshot churn;
+`get_element` on a snapshot id does not grow the cache; the expired-id message names the remedy.
+
+**Done when.** A loop of 10 000 `find_element` calls leaves the cache at its cap.
 
 ---
 
@@ -1292,6 +1366,276 @@ See the design note for the shape and the requirement matrix.
 **Done when.** A `click` shows the ring and banner and they fade 5 s later. No capture contains
 them. The hotkey hides them, and the next result carries the note exactly once. `--control-indicator
 off` shows nothing.
+
+---
+
+## E — Agent efficiency (not upstream parity)
+
+Added 2026-11-10 from a review of this server's own tool surface: where an AI client spends extra
+round trips or tokens, or cannot do something a person at the machine can. No item here has an
+upstream counterpart, so there is no **Upstream.** paragraph. Every "Ours today" statement was
+checked against the source on that date and none was exercised live. The preference throughout is
+a parameter on an existing tool over a new tool — E-6 and E-9 are the only two that raise the tool
+count (69 → 71), which moves the counts in `README.md`, `docs/architecture/*`,
+`skills/windows/SKILL.md`, `ToolInventoryTests` and C-7's annotation table.
+
+### E-1 — Server instructions in the MCP handshake  `P1 · S`
+- [ ] Not started
+
+**Ours today.** `AddMcpServer` in `WindowsMcpHost.AddWindowsMcp` sets `ServerInfo` only. The
+guidance on how to drive the server (start with `snapshot`, prefer `el_N` ids, re-snapshot after
+acting, `wait_for` over `wait`, read `Truncated`, stop on a takeover note) lives in
+`skills/windows/SKILL.md`, which reaches a Claude Code plugin install and nobody else: an HTTP
+client, Claude Desktop or any other MCP client gets 69 tool descriptions and no loop.
+
+**Sketch.** A constant of about 30 lines condensed from the skill's UI loop and safety rails, set
+as the server's instructions in `AddMcpServer`, so both transports send it in the `initialize`
+result. Confirm the option's name against the pinned `ModelContextProtocol` 2.2.0 before RED.
+Keep it short: it is paid for in every session.
+
+**Touches.** `Hosting/WindowsMcpHost.cs`, a new `Hosting/ServerInstructions.cs`,
+`tests/.../ServerInfoTests.cs`, `tests/.../HttpTransportTests.cs`.
+
+**Tests.** `initialize` over the in-process HTTP host carries the instructions; they name only
+tools that exist (checked against the discovered set, so a rename cannot leave them stale); a
+length ceiling.
+
+**Done when.** A client that has never seen the skill is told the snapshot → act → confirm loop at
+connect time.
+
+### E-2 — `interact_element`: expand, collapse, set_value, scroll_into_view  `P1 · S`
+- [ ] Not started
+
+**Ours today.** Six verbs: click, invoke, toggle, select, focus, type. The snapshot already reads
+`Expand`, `RangeValue`, `RangeMin` and `RangeMax` for every element and prints a `slide` action
+hint, but nothing can write them: a tree node or a collapsed pane can only be opened by a physical
+click, a slider only by dragging, and an off-screen element is refused by `click` with wheel-scroll
+and re-snapshot as the only remedy. (`select` with a value calls `Expand()` internally — the
+pattern is in reach.)
+
+**Sketch.** `expand` / `collapse` through `ExpandCollapsePattern`, reporting the state afterwards.
+`set_value` through `RangeValuePattern` for a numeric `value` — out of range is refused naming the
+minimum and maximum — falling back to a writable `ValuePattern`. `scroll_into_view` through
+`ScrollItemPattern`; many apps do not implement it, so the refusal must say to scroll the nearest
+scrollable ancestor (name its id when the walk has one). All refusals use D-10's caller-facing type.
+
+**Touches.** `Services/UIAutomationService.cs` (`InteractOnSta`), `Tools/UIAutomationTools.cs`
+(description and the unknown-action message), `skills/windows/SKILL.md`.
+
+**Tests.** Each verb on a fake with and without the pattern; `set_value` at, below and above the
+range and with a non-numeric value on a range control; the `Method`/`Detail` strings.
+
+**Done when.** A tree node expands, a slider moves to a number, and an off-screen list row comes
+into view, each in one call with no pointer movement.
+
+### E-3 — `click` modifiers; `key` repeat and hold  `P2 · S`
+- [ ] Not started
+
+**Ours today.** `click` takes a button and a click count and no modifiers; Ctrl-click exists only
+inside `multi_select`, and Shift-click (range select) and Alt-click nowhere. `key` presses one key
+once, so ten Down-arrows are ten calls. `IInputService.KeyDownAsync`/`KeyUpAsync` exist (B-7) but
+are not on the tool surface.
+
+**Sketch.** `click(modifiers:"ctrl+shift")` holds the named keys around the click and releases
+them in a `finally`, as `multi_select` does. `key(repeat:N, hold_ms:M)`: `repeat` 1–100 with the
+existing inter-key pacing; `hold_ms` keeps one key down for that long. No free-standing
+key-down/key-up tools: a modifier left down by a client that never sends the release is the #456
+class of bug upstream hit.
+
+**Touches.** `Tools/InputTools.cs`, `Services/InputService.cs`, `skills/windows/SKILL.md`.
+
+**Tests.** The key-down/up ordering around the click on a recording `IInputService`; release on a
+failed click and on cancellation; `repeat` and `hold_ms` bounds; an unknown modifier is refused
+before any input is sent.
+
+**Done when.** Shift-click selects a range and `key("down", repeat:10)` is one call.
+
+### E-4 — `find_element` filters: automation id, control type, class, within, paging  `P2 · M`
+- [ ] Not started
+
+**Ours today.** `find_element` matches a case-insensitive substring of the element's Name, filtered
+by four coarse kinds, and returns at most 20 with no way to ask for the rest. `ElementInfo` carries
+no AutomationId and no ClassName, so two identically named controls cannot be told apart and a
+search cannot be confined to a dialog or pane the client already holds an id for. Discovery itself
+works: an empty `text` matches every element the kind and scope allow, so an unnamed control (most
+icon buttons) does come back — but only as one of up to 20 anonymous rows the client must tell
+apart by bounds, with no way to ask for *that* control by a stable property. What is missing is
+precise targeting and paging, not the ability to see the control. `snapshot` has the same limit:
+its scopes are desktop, foreground and window.
+
+**Sketch.** `ElementInfo` gains `AutomationId` and `ClassName` (omitted from JSON when empty, so
+existing output is unchanged). `find_element` gains `automation_id` (exact), `control_type`
+(exact UIA type name), `class_name`, `within` (an element id: search that subtree only),
+`max_results` (default 20, capped) and `offset`, and reports the total matched so truncation is
+visible. `wait_for`'s element conditions take the same filters. Optionally `snapshot(root:<id>)`
+walks one subtree — its own item if it grows.
+
+**Touches.** `Abstractions/Models/UIAutomationDtos.cs`, `Abstractions/IUIAutomationService.cs`
+(a request record instead of a seventh positional parameter), `Services/UIAutomationService.cs`,
+`Tools/UIAutomationTools.cs`.
+
+**Tests.** Each filter alone and combined; `within` on a stale id; paging is stable across two
+calls on an unchanged tree; an empty `text` with `automation_id` returns exactly the one unnamed
+control, not the first 20 of everything.
+
+**Done when.** An unnamed toolbar button is addressed directly by automation id inside a named
+dialog, as a single match.
+
+### E-5 — `observe`: action tools return the state they produced  `P1 · M`
+- [ ] Not started
+
+**Ours today.** `click`, `type`, `key`, `shortcut`, `scroll`, `drag` and `interact_element` return
+an echo of what they did. Learning what happened costs a `wait_for` or `wait` and then a
+`snapshot`, so one UI step is three calls and three model turns.
+
+**Sketch.** A shared `observe` parameter on those tools: `none` (default — today's output,
+byte-identical), `foreground`, or `window` (the window the target element belongs to), with
+`settle_ms` (default about 250, capped). After the action the tool waits `settle_ms`, takes a
+snapshot of that scope and appends its compact text as a second block after the action's JSON.
+It is a real snapshot: it evicts the previous snapshot's ids and issues new ones, and the
+description must say so. One helper shared by every tool, not seven copies. A failed observation
+never fails the action: the action result is returned with a note.
+
+**Touches.** `Tools/InputTools.cs`, `Tools/UIAutomationTools.cs`, a new `Tools/Observation.cs`,
+`skills/windows/SKILL.md` (the loop becomes act-with-observe), a design note.
+
+**Tests.** `observe:none` output unchanged for every tool; the second block is the renderer's
+output for the right scope; the snapshot runs after the input, not before; a throwing snapshot
+yields the action result plus a note; `settle_ms` bounds.
+
+**Done when.** Clicking a menu returns the opened menu's items in the same call.
+
+### E-6 — `sequence`: an ordered batch of UI steps in one call  `P2 · M`
+- [ ] Not started
+
+**Ours today.** `multi_select` (Ctrl-clicks) and `multi_edit` (click-then-type) are the only
+batches. A menu path, a wizard page or a keyboard-driven dialog is one call per step.
+
+**Sketch.** A new tool `sequence(steps_json, observe?)`: an ordered array of `{tool, args}` drawn
+from a fixed allowlist of input, UIA and wait tools (click, type, key, shortcut, scroll, drag,
+interact_element, wait, wait_for, assert_element) — never `powershell`, file, registry or process
+tools. Steps run in order and stop at the first failure, or at the first `wait_for` that is not
+satisfied or `assert_element` that fails; the result carries per-step results, `failedIndex` and
+`error` in the shape B-7 uses, plus a final E-5 observation. Targets are resolved per step, not
+up front, because each step changes the screen; ids must therefore come from elements that survive
+the sequence, or steps address by coordinates. **A takeover (S-11) during the sequence aborts the
+remaining steps** — decide the mechanism in the design note before RED. Register the tool in
+`DrivingTools.Names`; annotations per C-7.
+
+**Touches.** A new `Tools/SequenceTools.cs` and a step dispatcher, `Hosting/DrivingTools.cs`,
+`docs/design/C-7-tool-annotations.md`, every tool-count surface.
+
+**Tests.** A tool outside the allowlist is refused before any step runs; stop-at-first-failure
+with the partial results; an unsatisfied `wait_for` stops the batch; a takeover between steps 2
+and 3 leaves step 3 unrun; a step cap.
+
+**Done when.** File → Save As → type a name → Enter is one call that reports the resulting window.
+
+### E-7 — Capture by window / element; OCR word positions  `P2 · M`
+- [ ] Not started
+
+**Ours today.** `screenshot` and `ocr` take `region` or `display`. Capturing one window means
+`window(action:"list")`, reading its bounds and passing them back as a region. `IOcrService`
+returns one string, so text read from an application with no UIA tree — a remote-desktop session,
+a game, a canvas — cannot be clicked: the model knows the words and not where they are.
+
+**Sketch.** `screenshot` and `ocr` gain `window` / `hwnd` (the B-10 matcher) and `element_id`,
+mutually exclusive with `region` and `display`, resolved to that rect; a minimised or off-screen
+target is refused naming its state. `ocr(format:"json")` returns lines and words with bounds in
+**virtual-desktop** pixels (the engine's word rectangles, mapped back through the capture origin),
+so a word's centre goes straight to `click`. `format:"text"` stays the default and unchanged.
+
+**Touches.** `Abstractions/IOcrService.cs` and a result record, `Services/OcrService.cs`,
+`Tools/ScreenTools.cs` (`ResolveRegionAsync`), `skills/windows/SKILL.md`.
+
+**Tests.** Target-resolution unit tests for each exclusive combination; the coordinate mapping for
+a region with a non-zero origin and for a secondary monitor with negative coordinates; a
+`UIAutomation`-category live test beside `OcrServiceLiveTests`.
+
+**Done when.** `ocr(window:"Notepad", format:"json")` returns a word whose centre, clicked, lands
+on that word.
+
+### E-8 — Session state: elevation, lock, secure desktop  `P2 · S–M`
+- [ ] Not started
+
+**Ours today.** Elevation is already caller-visible, but only as a by-product: `startup_report`
+puts `IsElevated()` in its header, and the default summary and the JSON both print `Elevated`. That
+is a full autorun inventory run to read one boolean, and the probe is private to
+`StartupReportService`. (The server normally runs unelevated but can be launched elevated, so the
+answer is not a constant.) What nothing reports is whether the workstation is locked, the session
+disconnected, or a UAC prompt is up on the secure desktop. In each of those cases `snapshot`
+returns an empty or stale tree and input goes nowhere, with nothing telling the model why.
+
+**Sketch.** A lightweight session probe plus the missing lock and desktop diagnostics; share the
+elevation check with `StartupReportService` instead of duplicating it.
+`system_info(category:"session")` → `{Elevated, IntegrityLevel, UserName, SessionId,
+Interactive, Locked, InputDesktop}`. `snapshot` adds a one-line note when the input desktop is not
+the user's (`OpenInputDesktop` fails or names `Winlogon`) — the UAC and lock-screen cases — so the
+model stops and tells the user. No elevation is ever attempted: this item reports, it does not
+escalate.
+
+**Touches.** A new `ISessionService` and implementation (register it in `AddWindowsMcp`),
+`Tools/SystemTools.cs`, `Services/UIAutomationService.cs` or the snapshot renderer for the note,
+`NativeMethods.txt`.
+
+**Tests.** The DTO mapping on a mocked probe; the note appears only when the probe says so;
+an `Integration` test that the real probe answers on the test machine without throwing.
+
+**Done when.** With a UAC prompt showing, `snapshot` says the secure desktop has the input and
+that the user must answer it.
+
+### E-9 — `file_edit` and content search for remote hosts  `P2 · M`
+- [ ] Not started
+
+**Ours today.** `file_write` replaces or appends a whole file; `file_search` matches name, size and
+date. On a local machine the client's own edit and search tools cover this. On a remote host over
+HTTP they cannot reach the disk, so changing one line of a config file means reading the file and
+writing all of it back, and finding which file mentions a setting means `powershell`.
+
+**Sketch.** A new tool `file_edit(path, old_string, new_string, replace_all?, encoding?)`:
+`old_string` must match exactly once unless `replace_all`; zero or several matches is a refusal
+that says how many; the write is the same temp-file-and-rename `file_write` uses; encoding, BOM
+and line endings of the file are preserved; the same path rules as C-1. `file_search` gains
+`content` (a regex), `max_matches` and context lines, returning path, line number and line, and
+skipping binary files.
+
+**Touches.** `Abstractions/IFileSystemService.cs`, `Services/FileSystemService.cs`,
+`Tools/FileTools.cs`, every tool-count surface, C-7's table.
+
+**Tests.** Unique, missing and ambiguous matches; CRLF and BOM preserved; a cancelled or failed
+write leaves the original; content search honours cancellation per file, the match cap, and an
+invalid regex is refused by name.
+
+**Done when.** One line of a remote config file is changed without the file crossing the wire.
+
+### E-10 — Named toolsets on top of S-1  `P3 · S`
+- [ ] Not started
+
+**Ours today.** All 69 tool descriptions are sent to every client (`screenshot`'s alone is about
+2 500 characters). S-1 will let an operator list tools to keep or drop by name.
+
+**Sketch.** After S-1: `--toolset ui|admin|forensics|files` (repeatable; `WINDOWSMCP_TOOLSET`)
+expands to a maintained list and composes with `--tools` / `--exclude-tools`. The lists live in
+one table beside C-7's classification, and a test asserts every tool belongs to at least one set
+so a new tool cannot be left out.
+
+**Done when.** `--toolset ui` serves the UI-automation tools and nothing forensic.
+
+### E-11 — Stable element ids and a snapshot diff  `P3 · L`
+- [ ] Not started
+
+**Ours today.** Ids are a counter (`el_{_nextId++}`); every `snapshot` evicts the previous
+snapshot's ids and re-describes the whole scope, so an unchanged control gets a new id each time
+and the client re-reads everything to learn that one thing changed.
+
+**Sketch.** Key ids to the element's UIA RuntimeId so the same control keeps its id while it
+lives, and add `snapshot(changes_only:true)` returning what appeared, disappeared and changed
+since the last snapshot of the same scope. This rewrites the id contract every element-taking tool
+relies on (roadmap C5) and RuntimeIds are not stable in every framework. **Conditional:** measure
+the snapshot text an agent actually pays for after E-5; if `observe` scoped to one window makes it
+small, close this item unbuilt.
+
+**Done when.** Decided from the E-5 measurement, with a design note either way.
 
 ---
 
