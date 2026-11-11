@@ -278,8 +278,13 @@ public sealed class ProcessService : IProcessService
         var psi = BuildStartInfo(spec);   // refuses a bad cwd before anything is spawned
 
         // Detached child keeps running after we dispose the wrapper; dispose only releases our handle.
-        using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException($"Failed to start process: {spec.Command}");
+        // D-10 R12/R26: a command that does not exist is a FileNotFoundException naming the file
+        // that was actually tried — for an unquoted command line that is the text before the first
+        // space, so say how to pass a path that contains one.
+        bool splitAtSpace = spec.Args is null && !spec.Command.StartsWith('"') && spec.Command.Contains(' ');
+        using var process = ProcessStartErrors.Start(psi, psi.FileName, splitAtSpace
+            ? "The command line was split at its first space: if the path contains spaces, quote it, or pass the executable as command and its arguments in args_json."
+            : null);
 
         return Task.FromResult(process.Id);
     }

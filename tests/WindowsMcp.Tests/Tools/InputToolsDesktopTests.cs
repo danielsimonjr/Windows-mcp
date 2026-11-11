@@ -138,13 +138,14 @@ public class InputToolsDesktopTests : IClassFixture<NotepadFixture>, IDisposable
         var json = InputVerb.Json(await _tools.Click(element_id: id));
 
         InputVerb.Str(json, "action").Should().Be("click");
-        // NOT Be(id), and never a literal el_N: the live service mints a fresh id on every
-        // GetElementAsync, so the echo is the id the tool's own resolution issued, not the one
-        // this test passed in. The mocked InputToolsClickTests cannot see that - there the mock
-        // hands back the same id it was asked for. What has to hold on a real desktop is that the
-        // echoed id still names THIS control and that the reported point is its centre.
+        // D-11 (R19): GetElementAsync answers under the caller's own id instead of minting a fresh
+        // one per call, so the live echo IS the id this test passed in - the same thing the mocked
+        // InputToolsClickTests assert. Before D-11 this test asserted the opposite and documented
+        // the leak as if it were the contract.
         var echoed = InputVerb.Str(json, "elementId");
+        echoed.Should().Be(id, "the tool echoes the id it was given; nothing is re-minted");
         var echoedInfo = await _uia.GetElementAsync(echoed);
+        echoedInfo.ElementId.Should().Be(id);
         echoedInfo.ControlType.Should().Be(editor.ControlType);
         echoedInfo.Bounds.Should().Be(bounds, "the echoed id has to resolve to the control that was clicked");
         InputVerb.Str(json, "name").Should().Be(editor.Name,

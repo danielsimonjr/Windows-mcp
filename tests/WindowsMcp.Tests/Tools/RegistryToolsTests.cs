@@ -283,6 +283,24 @@ public class RegistryToolsTests
         json.GetProperty("deleted").GetBoolean().Should().BeFalse();
         json.GetProperty("subKeysRemoved").GetInt32().Should().Be(0);
     }
+
+    // ---- D-10 R25e: the description says what the caller now gets ----------------------------
+
+    [Fact]
+    public void RegistryDelete_description_describes_the_access_denied_refusal_not_a_pass_through()
+    {
+        // Since D-10 R14 access-denied reaches the caller as one refusal naming the key (and,
+        // after R25a, saying when a tree delete was denied part-way). "The OS error is passed
+        // through" was true of the masked SecurityException era and promises the wrong thing.
+        var description = typeof(RegistryTools).GetMethod(nameof(RegistryTools.RegistryDelete))!
+            .GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), inherit: false)
+            .Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+
+        description.Should().NotContainEquivalentOf("passed through");
+        description.Should().NotContainEquivalentOf("OS error");
+        description.Should().ContainEquivalentOf("denied", "the caller is told what a refusal looks like");
+        description.Should().ContainEquivalentOf("elevat", "and what the remedy is");
+    }
 }
 
 /// <summary>

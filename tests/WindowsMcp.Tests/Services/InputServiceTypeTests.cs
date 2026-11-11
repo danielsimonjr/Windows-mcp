@@ -304,9 +304,25 @@ public class InputServiceTypeTests
         // Checked before the cursor moves, so this injects nothing and stays Unit.
         // H.InputSimulator has no MiddleButtonDown/Up; degrading to a left drag would silently do
         // the wrong thing to the desktop.
+        // D-10 (R2): the refusal used to be a NotSupportedException, which the call-tool filter
+        // masks; a bad argument value is an ArgumentException naming the button.
         var act = () => new InputService().DragAsync(0, 0, 10, 10, MouseButton.Middle, 300, 20);
 
-        await act.Should().ThrowAsync<NotSupportedException>().WithMessage("*iddle*");
+        var ex = (await act.Should().ThrowAsync<ArgumentException>().WithMessage("*iddle*")).Which;
+        ex.ParamName.Should().Be("button");
+        ToolErrors.IsCallerFacing(ex).Should().BeTrue("a refusal the caller cannot read is indistinguishable from a crash");
+    }
+
+    [Fact]
+    public async Task DragAsync_without_duration_refuses_the_middle_button_as_a_caller_facing_argument_error()
+    {
+        // D-10 (R2), the other overload: same check, same type. Checked before the cursor moves,
+        // so this injects nothing and stays Unit.
+        var act = () => new InputService().DragAsync(0, 0, 10, 10, MouseButton.Middle);
+
+        var ex = (await act.Should().ThrowAsync<ArgumentException>().WithMessage("*iddle*")).Which;
+        ex.ParamName.Should().Be("button");
+        ToolErrors.IsCallerFacing(ex).Should().BeTrue();
     }
 
     [Fact]

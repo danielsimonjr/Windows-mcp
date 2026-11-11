@@ -41,6 +41,13 @@ namespace WindowsMcp.Tests.Fixtures;
 /// comparing.
 /// </para>
 /// <para>
+/// FOREGROUND — D-10 R24c. Also join when a class READS the foreground and asserts on what it
+/// finds there (<c>get_state</c>, a foreground <c>find_element</c> or <c>snapshot</c>), or may
+/// CHANGE it (focus, an <c>interact_element</c> verb on a control of its own window): the one
+/// moves the ground under the other. <c>UIAutomationServiceElementCacheIntegrationTests</c> failed
+/// intermittently beside the D-10 refusal tests for exactly this reason.
+/// </para>
+/// <para>
 /// Needing an interactive desktop is NOT enough on its own: <c>ScreenshotServiceTests</c>,
 /// <c>OcrServiceLiveTests</c> and <c>HttpTransportScreenshotImageTests</c> capture the screen but
 /// assert only on size, format, metadata and PNG/JPEG magic bytes; <see cref="EdgeCollection"/>'s

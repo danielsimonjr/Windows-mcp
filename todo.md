@@ -1,7 +1,7 @@
 # Windows-mcp — todo
 
 Cross-session task tracker. Shipped work is recorded in `CHANGELOG.md`. The feature backlog
-against the upstream Python server, plus the agent-efficiency backlog in its section E (66
+against the upstream Python server, plus the agent-efficiency backlog in its section E (73
 prioritized items with implementation sketches), is
 `docs/upstream-parity-checklist.md` — new capability work starts there, not here.
 
@@ -176,3 +176,7 @@ stdio without touching the registered server — spawn the exe, `initialize` →
   `VirtualDesktopServiceIntegrationTests.GetWindowDesktopIdAsync_returns_exactly_the_id_the_com_object_reported`,
   `WaitForFindPathIntegrationTests.The_pre_B6_overload_still_throws_a_timeout_when_every_poll_failed`,
   `WindowServiceTests.ListAsync_without_minimized_windows_is_a_subset_with_no_minimized_state`.
+- `WaitForFindPathIntegrationTests.Element_exists_scoped_to_a_window_that_is_not_open_reports_that_every_poll_failed`
+  (`WaitForServiceTests.cs`) — timing-fragile, not a regression: it polls live UIA inside a 400 ms
+  budget and asserts `Attempts >= 2`, which a slow window lookup on a loaded box can miss (the
+  likely cause; the failing assertion was not recorded). Confirmed failing on `main` too (4 of 5 runs alone, 2026-11-11, during D-10/D-11).

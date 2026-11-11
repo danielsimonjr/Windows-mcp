@@ -57,7 +57,7 @@ public sealed class UIAutomationTools
         _ => throw new ArgumentException($"Unknown scope '{scope}'; expected desktop|foreground|window")
     };
 
-    [McpServerTool(Title = "Desktop snapshot", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("One call for the whole desktop (parity A-2): every open window, the foreground one, the cursor, and every interactive element with its centre coordinates and an action hint (click/fill/toggle/select/slide/scroll), plus scrollable regions with their scroll percentages. Default format is compact text; format:'json' returns the same as JSON (with the element tree when include_tree is set). Element ids (el_N) are valid until the next snapshot and work with click (use the centre coordinates), interact_element and get_element. scope: desktop (default, every non-minimised window, topmost first) | foreground | window (with 'window' = a title, exact then substring). max_elements caps the walk (0 = the server default, --max-tree-elements, 500); when the cap is hit the result says it was truncated (the text form adds how to narrow the view; json carries Truncated and ElementLimit). use_dom (browser DOM mode, Chromium: chrome/msedge/brave/opera/vivaldi): for every browser window in scope walk only the web page — the RootWebArea document — instead of the whole window, so the address bar and tab strip are left out, and add a Pages section per browser window: the page document's id, title, URL, vertical scroll percent and the visible page text in document order (below-the-fold text appears after scrolling). The page document itself is scrollable, never interactive. A browser window with no page document (still loading, or Firefox, which is not supported yet) is walked whole and its Pages entry says so.")]
+    [McpServerTool(Title = "Desktop snapshot", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("One call for the whole desktop (parity A-2): every open window, the foreground one, the cursor, and every interactive element with its centre coordinates and an action hint (click/fill/toggle/select/slide/scroll), plus scrollable regions with their scroll percentages. Default format is compact text; format:'json' returns the same as JSON (with the element tree when include_tree is set). Element ids (el_N) are valid until the next snapshot (screenshot with annotate, wait_for's text/focused conditions and scrape with source dom take one too) and work with click (use the centre coordinates), interact_element and get_element. scope: desktop (default, every non-minimised window, topmost first) | foreground | window (with 'window' = a title, exact then substring). max_elements caps the walk (0 = the server default, --max-tree-elements, 500); when the cap is hit the result says it was truncated (the text form adds how to narrow the view; json carries Truncated and ElementLimit). use_dom (browser DOM mode, Chromium: chrome/msedge/brave/opera/vivaldi): for every browser window in scope walk only the web page — the RootWebArea document — instead of the whole window, so the address bar and tab strip are left out, and add a Pages section per browser window: the page document's id, title, URL, vertical scroll percent and the visible page text in document order (below-the-fold text appears after scrolling). The page document itself is scrollable, never interactive. A browser window with no page document (still loading, or Firefox, which is not supported yet) is walked whole and its Pages entry says so.")]
     public async Task<string> Snapshot(
         [Description("desktop | foreground | window")] string scope = "desktop",
         [Description("Window title, exact or substring, case-insensitive; only with scope=window")] string? window = null,
@@ -110,9 +110,9 @@ public sealed class UIAutomationTools
         return JsonSerializer.Serialize(result);
     }
 
-    [McpServerTool(Title = "Get element", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("Get detailed information about a UI element by its ID.")]
+    [McpServerTool(Title = "Get element", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description("Get detailed information about a UI element by its ID; the ElementId in the result is the id passed in.")]
     public async Task<string> GetElement(
-        [Description("Element ID returned by find_element or get_state")] string element_id)
+        [Description("Element ID returned by snapshot, find_element or get_state")] string element_id)
     {
         var info = await _uia.GetElementAsync(element_id);
         return JsonSerializer.Serialize(info);
@@ -135,7 +135,7 @@ public sealed class UIAutomationTools
         return result.Pass ? "PASS" : $"FAIL: {result.State} — observed {result.Observed}";
     }
 
-    [McpServerTool(Title = "Interact with element", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false), Description("Act on a UI element by id. action: click (InvokePattern, else SelectionItem, else Toggle, else a physical click at the element's centre), invoke, toggle, select (no value: select this item; value: pick the child item with that name in a combo/list), focus, type (value = text; a writable ValuePattern replaces the whole value, otherwise it is typed at the caret). Returns {ElementId, Action, Method, Detail} saying which pattern or fallback fired; an unsupported pattern errors naming the control type.")]
+    [McpServerTool(Title = "Interact with element", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false), Description("Act on a UI element by id. action: click (InvokePattern, else SelectionItem, else Toggle, else a physical click at the element's centre), invoke, toggle, select (no value: select this item; value: pick the child item with that name in a combo/list), focus, type (value = text; a writable ValuePattern replaces the whole value, otherwise it is typed at the caret). Returns {ElementId, Action, Method, Detail} saying which pattern or fallback fired; an unsupported pattern errors naming the pattern and the control, and a control that reports disabled is refused before anything is touched.")]
     public async Task<string> InteractElement(
         [Description("Element ID from find_element or get_state")] string element_id,
         [Description("click | invoke | toggle | select | focus | type")] string action,
@@ -162,7 +162,8 @@ public sealed class UIAutomationTools
         "regions, and with use_dom:true the browser page's words) | active_window (the foreground window's title matches " +
         "text: exact, substring or fuzzy 70+). Aliases: element, enabled, focused, text, window. Always returns " +
         "{Satisfied, Condition, ElapsedMs, Attempts, Detail, Element?}: a timeout is Satisfied:false with the last Detail, " +
-        "not an error; a poll that fails is retried, and when every poll failed Detail says so.")]
+        "not an error; a poll that fails is retried, and when every poll failed Detail says so. A text_exists or " +
+        "focused_element poll is a snapshot, so it replaces the previous snapshot's element ids.")]
     public async Task<string> WaitFor(
         [Description("What to look for: an element name for the element conditions, a window title for active_window, on-screen text for text_exists (substring, case-insensitive)")] string text,
         [Description("Timeout in milliseconds")] int timeout_ms = 10000,

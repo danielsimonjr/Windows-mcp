@@ -1,5 +1,9 @@
+using System.Reflection;
+using System.Reflection.Emit;
+using System.Runtime.CompilerServices;
 using FluentAssertions;
 using WindowsMcp;
+using WindowsMcp.Abstractions;
 using Xunit;
 
 namespace WindowsMcp.Tests.Services;
@@ -242,5 +246,346 @@ public class ToolErrorsTests
         }
         capped.Should().StartWith(head[..200], "the head of the message is still word for word");
         capped.Should().ContainEquivalentOf("cut", "and the marker still says the message was cut");
+    }
+
+    // ---- D-10 (R3): the family guard ----------------------------------------------------------
+
+    /// <summary>
+    /// One reasoned exemption: <paramref name="Site"/> constructing <paramref name="Exception"/>
+    /// on purpose, and why it must stay masked. <paramref name="Site"/> is a type's full name
+    /// (covering its methods and its nested lambda/state-machine types) or one method
+    /// (<c>Namespace.Type.Method</c>).
+    /// </summary>
+    private sealed record Exemption(string Site, Type Exception, string Reason)
+    {
+        public bool Covers(string site) =>
+            site == Site
+            || site.StartsWith(Site + ".", StringComparison.Ordinal)
+            || site.StartsWith(Site + "+", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// D-10 R16a: the constructions our own code makes on purpose that MUST stay masked, keyed by
+    /// (site, exception type). Anything else the server assembly constructs has to be
+    /// caller-facing. Keyed by SITE, not by type alone: a type-wide exemption for
+    /// <c>Win32Exception</c> let <c>PowerService.ExecuteAsync</c> throw the OS's refusals as a
+    /// masked fault (R15) — the token plumbing and the refusals live in the same type, so even a
+    /// declaring-type key cannot tell them apart. Adding an entry is a decision a reviewer sees in
+    /// the diff; constructing a new one silently is what D-10 was.
+    /// </summary>
+    private static readonly Exemption[] MaskedOnPurpose =
+    [
+        new("WindowsMcp.Services.Win32PowerNative.EnableShutdownPrivilege", typeof(System.ComponentModel.Win32Exception),
+            "the SeShutdownPrivilege token plumbing (OpenProcessToken, LookupPrivilegeValue, AdjustTokenPrivileges) failing " +
+            "is a fault, not a refusal; the OS refusing the power action itself is an InvalidOperationException (R15)"),
+        new("WindowsMcp.Hosting.ServerOptions", typeof(WindowsMcp.Hosting.OptionsException),
+            "a command-line parse failure, reported by Program before any tool exists - never on a tool path"),
+        new("WindowsMcp.Hosting.HotkeyParser", typeof(WindowsMcp.Hosting.OptionsException),
+            "a --hotkey option parse failure, reported by Program before any tool exists - never on a tool path"),
+    ];
+
+    /// <summary>
+    /// D-10 R16b: the sites allowed to call <c>Marshal.ThrowExceptionForHR</c> /
+    /// <c>Marshal.GetExceptionForHR</c> — our own code throwing a COMException with no
+    /// <c>newobj</c> for the scan above to see.
+    /// </summary>
+    private static readonly Exemption[] HResultThrowsOnPurpose =
+    [
+        new("WindowsMcp.Services.WgcCaptureBackend", typeof(System.Runtime.InteropServices.COMException),
+            "a DXGI QueryInterface, D3D11 device creation or WindowsCreateString (CsWin32 HRESULT.ThrowOnFailure) " +
+            "failing mid-capture is a graphics-stack fault, not a refusal the caller could act on"),
+    ];
+
+    /// <summary>
+    /// D-10 (R3): the strongest guard that works in a clean clone without a source tree — every
+    /// <c>newobj</c> of an exception type in the IL of <c>WindowsMcp</c> and
+    /// <c>WindowsMcp.Abstractions</c>, lambdas, closures and async/iterator state machines
+    /// included, must construct a type <see cref="ToolErrors.IsCallerFacing"/> accepts, or one on
+    /// the reasoned <see cref="MaskedOnPurpose"/> list. It reads the built assemblies, not
+    /// <c>src/</c>, so formatting, aliases and helper factories (D-10's
+    /// <c>UiRefusals.PatternNotSupported</c>) cannot hide a construction.
+    /// <para>
+    /// What it cannot catch: an exception thrown by a library or the framework on our behalf
+    /// (<c>int.Parse</c>'s <c>FormatException</c>, FlaUI's <c>PropertyNotSupportedException</c>,
+    /// HttpClient's <c>NotSupportedException</c>) — those need the call site to validate first, as
+    /// WebService's scheme check does; a caller-facing type thrown for what is really a fault
+    /// (that is over-surfacing, a review question); and whether a <c>MaskedOnPurpose</c> type is
+    /// ever used for a deliberate refusal.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Every_exception_the_server_constructs_is_caller_facing_or_masked_on_purpose()
+    {
+        var offenders = ConstructedExceptions(typeof(ToolErrors).Assembly, typeof(IInputService).Assembly)
+            .Where(c => !ToolErrors.IsCallerFacing((Exception)RuntimeHelpers.GetUninitializedObject(c.Exception)))
+            .Where(c => !MaskedOnPurpose.Any(e => e.Exception == c.Exception && e.Covers(c.Site)))
+            .Select(c => $"{c.Site} constructs {c.Exception.FullName}")
+            .Distinct()
+            .OrderBy(s => s, StringComparer.Ordinal)
+            .ToList();
+
+        // Joined, so the failure lists every offender rather than a truncated collection.
+        string.Join(Environment.NewLine, offenders).Should().BeEmpty(
+            "a deliberate refusal thrown as a type ToolErrors.IsCallerFacing rejects reaches the caller as " +
+            "\"An error occurred invoking '<tool>'.\" - use ArgumentException / InvalidOperationException / " +
+            "KeyNotFoundException / IOException / UnauthorizedAccessException / TimeoutException, or add the type " +
+            "to MaskedOnPurpose with the reason it is a fault and not a refusal");
+    }
+
+    /// <summary>
+    /// D-10 R16a: an exemption is only as good as the site it names. One that names a site which
+    /// no longer constructs that type is dead weight that would silently re-admit whatever lands
+    /// there next — and one that names a site which does not exist yet (Win32PowerNative, until
+    /// R15 lands) is a decision that has not been carried out.
+    /// </summary>
+    [Fact]
+    public void Every_masked_on_purpose_exemption_names_a_construction_that_exists()
+    {
+        var found = ConstructedExceptions(typeof(ToolErrors).Assembly, typeof(IInputService).Assembly).ToList();
+
+        var stale = MaskedOnPurpose
+            .Where(e => !found.Any(c => c.Exception == e.Exception && e.Covers(c.Site)))
+            .Select(e => $"{e.Site} / {e.Exception.Name}")
+            .ToList();
+
+        string.Join(Environment.NewLine, stale).Should().BeEmpty(
+            "an exemption for a construction that is not there is either stale (delete it) or not yet implemented");
+    }
+
+    [Theory]
+    [InlineData("WindowsMcp.Services.Win32PowerNative.EnableShutdownPrivilege", true)]
+    [InlineData("WindowsMcp.Services.Win32PowerNative.EnableShutdownPrivilegeEx", false)]   // a prefix is not the method
+    [InlineData("WindowsMcp.Services.Win32PowerNative.ExitWindows", false)]                 // same type, another method
+    [InlineData("WindowsMcp.Services.PowerService.ExecuteAsync", false)]                     // the R15 refusals
+    [InlineData("WindowsMcp.Services.PowerService+<>c.<ExecuteAsync>b__0_0", false)]
+    public void A_Win32Exception_exemption_covers_its_one_site_and_nothing_else(string site, bool covered)
+    {
+        MaskedOnPurpose.Any(e => e.Exception == typeof(System.ComponentModel.Win32Exception) && e.Covers(site))
+            .Should().Be(covered);
+    }
+
+    [Theory]
+    [InlineData("WindowsMcp.Hosting.ServerOptions.Parse", true)]
+    [InlineData("WindowsMcp.Hosting.ServerOptions+<>c.<Parse>b__1_0", true)]   // a lambda inside the type
+    [InlineData("WindowsMcp.Hosting.ServerOptionsX.Parse", false)]             // a prefix is not the type
+    [InlineData("WindowsMcp.Tools.SystemTools.Power", false)]
+    public void A_type_wide_exemption_covers_the_type_and_its_nested_types_only(string site, bool covered)
+    {
+        MaskedOnPurpose.Any(e => e.Exception == typeof(WindowsMcp.Hosting.OptionsException) && e.Covers(site))
+            .Should().Be(covered);
+    }
+
+    // ---- D-10 R16b: our own code throwing an HRESULT with no newobj ---------------------------
+
+    /// <summary>
+    /// <c>Marshal.ThrowExceptionForHR(hr)</c> throws a COMException (or whatever the HRESULT maps
+    /// to) with no <c>newobj</c> in our IL, so the construction scan cannot see it.
+    /// <c>Win32AppActivator.ActivatePackaged</c> did exactly that for a launch the caller has to
+    /// hear about (R12). Every such call must be on the reasoned
+    /// <see cref="HResultThrowsOnPurpose"/> list.
+    /// </summary>
+    [Fact]
+    public void Every_HRESULT_throw_the_server_makes_is_on_the_reasoned_list()
+    {
+        var offenders = HResultThrows(typeof(ToolErrors).Assembly, typeof(IInputService).Assembly)
+            .Where(site => !HResultThrowsOnPurpose.Any(e => e.Covers(site.Site)))
+            .Select(site => $"{site.Site} calls {site.Method}")
+            .Distinct()
+            .OrderBy(s => s, StringComparer.Ordinal)
+            .ToList();
+
+        string.Join(Environment.NewLine, offenders).Should().BeEmpty(
+            "an HRESULT thrown as a COMException reaches the caller as \"An error occurred invoking '<tool>'.\" - " +
+            "throw a caller-facing exception carrying the HRESULT in hex, or add the site to HResultThrowsOnPurpose with the reason");
+    }
+
+    [Fact]
+    public void The_HRESULT_scan_sees_the_capture_backends_call()
+    {
+        // Non-vacuity: a scan that finds nothing passes for ever.
+        HResultThrows(typeof(ToolErrors).Assembly)
+            .Should().Contain(s => s.Site.StartsWith("WindowsMcp.Services.WgcCaptureBackend", StringComparison.Ordinal)
+                && s.Method == "Marshal.ThrowExceptionForHR");
+    }
+
+    /// <summary>
+    /// D-10 R27: CsWin32's <c>Windows.Win32.Foundation.HRESULT.ThrowOnFailure()</c> calls
+    /// <c>Marshal.ThrowExceptionForHR</c> from INSIDE the generated <c>Windows.Win32</c> namespace,
+    /// which <see cref="OwnMethodBodies"/> skips — so a call to it from our code threw a COMException
+    /// the scan never saw. <c>WgcCaptureBackend</c> makes three (D3D11CreateDevice,
+    /// CreateDirect3D11DeviceFromDXGIDevice, WindowsCreateString); the scan must see them, which is
+    /// what puts every future one through the reasoned list.
+    /// </summary>
+    [Fact]
+    public void The_HRESULT_scan_sees_CsWin32s_ThrowOnFailure_at_the_capture_backends_call_sites()
+    {
+        var sites = HResultThrows(typeof(ToolErrors).Assembly)
+            .Where(s => s.Method == "HRESULT.ThrowOnFailure")
+            .Select(s => s.Site)
+            .Distinct()
+            .ToList();
+
+        sites.Should().NotBeEmpty("a ThrowOnFailure call is an HRESULT throw with no newobj in our IL");
+        sites.Should().OnlyContain(s => s.StartsWith("WindowsMcp.Services.WgcCaptureBackend", StringComparison.Ordinal),
+            "WgcCaptureBackend is the only reasoned site today; anything else must fail the guard above");
+        sites.Count.Should().BeGreaterThanOrEqualTo(2,
+            "device creation and the HSTRING helper are different methods; a scan that sees one of them is half a scan");
+    }
+
+    /// <summary>
+    /// Keeps the guard above honest: an IL walk that silently found nothing would pass for ever.
+    /// These are constructions the guard must see — a lambda body on the UIA service, an async
+    /// tool method's state machine, and a plain method.
+    /// </summary>
+    [Fact]
+    public void The_family_guard_sees_constructions_in_lambdas_state_machines_and_plain_methods()
+    {
+        var found = ConstructedExceptions(typeof(ToolErrors).Assembly).ToList();
+
+        // R16c: a construction that exists ONLY inside a closure's display class. Since D-11 no
+        // KeyNotFoundException is constructed in a UIAutomationService lambda (lookups moved to
+        // ElementCache.Get), so the old "KeyNotFoundException anywhere in UIAutomationService"
+        // check was satisfied by plain methods and iterators and no longer proved lambdas are seen.
+        // Round 2: GetTableAsync's GridPattern refusal moved into the named MissingPattern helper,
+        // so the pin moved to the one construction still written inline in a capturing lambda:
+        // SnapshotAsync's "no automation element for the window handle" inside its OnStaAsync body
+        // (the lambda captures this, request and the targets, so it lives in a display class).
+        found.Should().Contain(c => c.Exception == typeof(InvalidOperationException)
+                && c.Site.StartsWith("WindowsMcp.Services.UIAutomationService+<>c", StringComparison.Ordinal)
+                && c.Site.Contains("<SnapshotAsync>", StringComparison.Ordinal),
+            "SnapshotAsync's \"no automation element for the window handle\" is built inside its OnStaAsync lambda's display class");
+        found.Should().Contain(c => c.Exception == typeof(ArgumentException)
+                && c.Site.StartsWith("WindowsMcp.Tools.InputTools+<", StringComparison.Ordinal),
+            "InputTools.Drag is async: its argument checks live in a compiler-generated state machine");
+        found.Should().Contain(c => c.Exception == typeof(ArgumentOutOfRangeException)
+                && c.Site.StartsWith("WindowsMcp.Services.UiTree.ElementBudget", StringComparison.Ordinal),
+            "and a plain constructor's guard");
+        found.Select(c => c.Exception).Distinct().Count().Should().BeGreaterThan(5,
+            "the server constructs a dozen exception types; a walk that sees two is broken");
+    }
+
+    [Fact]
+    public void The_family_guard_ignores_the_compiler_generated_iterator_Reset()
+    {
+        // Every C# iterator's synthesized IEnumerator.Reset throws NotSupportedException. It is not
+        // a refusal and no tool can reach it; flagging it would make the guard unusable.
+        ConstructedExceptions(typeof(ToolErrors).Assembly)
+            .Should().NotContain(c => c.Site.EndsWith("IEnumerator.Reset", StringComparison.Ordinal));
+    }
+
+    private sealed record Construction(string Site, Type Exception);
+
+    private static readonly Dictionary<short, OpCode> OpCodesByValue = typeof(OpCodes)
+        .GetFields(BindingFlags.Public | BindingFlags.Static)
+        .Select(f => (OpCode)f.GetValue(null)!)
+        .ToDictionary(o => o.Value);
+
+    /// <summary>Every <c>newobj</c> of an <see cref="Exception"/> subtype in the given assemblies' own IL.</summary>
+    private static IEnumerable<Construction> ConstructedExceptions(params Assembly[] assemblies)
+    {
+        foreach (var (type, method, il, site) in OwnMethodBodies(assemblies))
+            foreach (var token in MethodTokens(il, OpCodes.Newobj))
+            {
+                var ctor = method.Module.ResolveMethod(token,
+                    type.IsGenericType ? type.GetGenericArguments() : null,
+                    method.IsGenericMethod ? method.GetGenericArguments() : null);
+                var created = ctor?.DeclaringType;
+                if (created is not null && typeof(Exception).IsAssignableFrom(created))
+                    yield return new Construction(site, created);
+            }
+    }
+
+    private sealed record HResultThrow(string Site, string Method);
+
+    private static readonly string[] HResultThrowers = ["ThrowExceptionForHR", "GetExceptionForHR"];
+
+    /// <summary>
+    /// Every <c>call</c> to <c>Marshal.ThrowExceptionForHR</c> / <c>Marshal.GetExceptionForHR</c> (any
+    /// overload), and (R27) to CsWin32's <c>Windows.Win32.Foundation.HRESULT.ThrowOnFailure</c>, which
+    /// is generated into our own assembly and throws through Marshal where the scan does not look.
+    /// <c>Method</c> is "Marshal.&lt;name&gt;" or "HRESULT.ThrowOnFailure".
+    /// </summary>
+    private static IEnumerable<HResultThrow> HResultThrows(params Assembly[] assemblies)
+    {
+        foreach (var (type, method, il, site) in OwnMethodBodies(assemblies))
+            foreach (var token in MethodTokens(il, OpCodes.Call, OpCodes.Callvirt))
+            {
+                MethodBase? callee;
+                try
+                {
+                    callee = method.Module.ResolveMethod(token,
+                        type.IsGenericType ? type.GetGenericArguments() : null,
+                        method.IsGenericMethod ? method.GetGenericArguments() : null);
+                }
+                // A call into an open generic the context cannot close. Marshal's HRESULT methods
+                // are non-generic, so a failure here can never hide one of them.
+                catch (ArgumentException) { continue; }
+                if (callee?.DeclaringType == typeof(System.Runtime.InteropServices.Marshal)
+                    && HResultThrowers.Contains(callee.Name))
+                    yield return new HResultThrow(site, "Marshal." + callee.Name);
+                else if (callee?.DeclaringType?.FullName == "Windows.Win32.Foundation.HRESULT"
+                    && callee.Name == "ThrowOnFailure")
+                    yield return new HResultThrow(site, "HRESULT.ThrowOnFailure");
+            }
+    }
+
+    /// <summary>
+    /// Every method body in the given assemblies that is ours to answer for: generated interop,
+    /// regex runners, collection-expression wrappers and iterator <c>Reset</c> are skipped.
+    /// </summary>
+    private static IEnumerable<(Type Type, MethodBase Method, byte[] Il, string Site)> OwnMethodBodies(params Assembly[] assemblies)
+    {
+        const BindingFlags all = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
+                                 | BindingFlags.Static | BindingFlags.DeclaredOnly;
+        foreach (var assembly in assemblies)
+            foreach (var type in assembly.GetTypes())
+            {
+                // Source-generated interop (CsWin32) and [GeneratedRegex] runners are not our refusal paths.
+                if (type.Namespace is { } ns
+                    && (ns.StartsWith("Windows.Win32", StringComparison.Ordinal)
+                        || ns.StartsWith("System.Text.RegularExpressions.Generated", StringComparison.Ordinal)))
+                    continue;
+
+                // The compiler's synthesized collection-expression wrappers (<>z__ReadOnlyArray<T> and
+                // friends): their IList/ICollection mutators throw NotSupportedException by contract.
+                if (type.Name.StartsWith("<>z__", StringComparison.Ordinal)) continue;
+
+                bool generated = type.IsDefined(typeof(CompilerGeneratedAttribute), inherit: false);
+                var methods = type.GetMethods(all).Cast<MethodBase>().Concat(type.GetConstructors(all));
+                foreach (var method in methods)
+                {
+                    if (generated && method.Name.EndsWith("IEnumerator.Reset", StringComparison.Ordinal)) continue;
+                    var il = method.GetMethodBody()?.GetILAsByteArray();
+                    if (il is null) continue;
+                    yield return (type, method, il, $"{type.FullName}.{method.Name}");
+                }
+            }
+    }
+
+    /// <summary>The metadata tokens of every instruction in a method body whose opcode is one of <paramref name="wanted"/>.</summary>
+    private static List<int> MethodTokens(byte[] il, params OpCode[] wanted)
+    {
+        var tokens = new List<int>();
+        int i = 0;
+        while (i < il.Length)
+        {
+            OpCode op = il[i] == 0xFE
+                ? OpCodesByValue[unchecked((short)(0xFE00 | il[i + 1]))]
+                : OpCodesByValue[il[i]];
+            i += op.Size;
+
+            if (Array.IndexOf(wanted, op) >= 0) tokens.Add(BitConverter.ToInt32(il, i));
+
+            i += op.OperandType switch
+            {
+                OperandType.InlineNone => 0,
+                OperandType.ShortInlineBrTarget or OperandType.ShortInlineI or OperandType.ShortInlineVar => 1,
+                OperandType.InlineVar => 2,
+                OperandType.InlineI8 or OperandType.InlineR => 8,
+                OperandType.InlineSwitch => 4 + 4 * BitConverter.ToInt32(il, i),
+                _ => 4,   // InlineBrTarget, InlineField, InlineI, InlineMethod, InlineSig, InlineString, InlineTok, InlineType, ShortInlineR
+            };
+        }
+        return tokens;
     }
 }

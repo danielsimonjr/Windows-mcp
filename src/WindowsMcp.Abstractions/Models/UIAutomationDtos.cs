@@ -101,7 +101,12 @@ public record SnapshotRequest(
 /// A-14: report per-stage timings on the snapshot (<c>--profile-snapshot</c>). Off by default, so
 /// an unprofiled response is byte-identical to a pre-A-14 one.
 /// </param>
-public record UiTreeOptions(int MaxElements, bool Profile = false)
+/// <param name="MaxCachedElements">
+/// D-11: the cap on element ids held outside the current snapshot (find_element, get_state); the
+/// least recently used goes first. The service raises it to twice <paramref name="MaxElements"/>
+/// when that is larger, so one call's own ids cannot evict each other.
+/// </param>
+public record UiTreeOptions(int MaxElements, bool Profile = false, int MaxCachedElements = 5000)
 {
     public static UiTreeOptions Default { get; } = new(500);
 }

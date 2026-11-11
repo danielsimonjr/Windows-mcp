@@ -720,14 +720,14 @@ parameter.
 | 011 | S3 | watch | WATCH relative path | A relative `path` (`"drivers"`) is accepted and resolved against the server cwd (`…\system32\drivers`) | require an absolute path or refuse |
 | 012 | S3 | disk_inspect | DISK_INSPECT relative | Same relative-path acceptance as DEF-011 | require absolute / refuse |
 | 013 | S3 | integrity (run defect) | INTEGRITY-09, INTEGRITY corrupt | Store redirect not honoured: baseline was written to the **real** `%LOCALAPPDATA%\windows-mcp\integrity\baseline.json` (absent at phase 0), and a corrupt store yields no baseline / a locked store is removed | honour the redirect env; don't delete a store you can't read |
-| 014 | S2 | registry_get | REGISTRY_GET HKLM\SECURITY | `HKLM\SECURITY` (access denied) → masked | rethrow `UnauthorizedAccessException` (already caller-facing) from the read |
+| 014 | S2 | registry_get | REGISTRY_GET HKLM\SECURITY | `HKLM\SECURITY` (access denied) → masked | **Addressed in code by D-10 (`CHANGELOG.md [Unreleased]`); not re-run live yet.** rethrow `UnauthorizedAccessException` (already caller-facing) from the read |
 | 015 | S3 | registry_get/set | REGISTRY Binary/MultiString | Binary/MultiString values come back unusable (not round-trippable) | encode/decode these kinds explicitly |
 | 016 | S3 | registry_set | REGISTRY_SET kind | An unknown `kind` silently falls back to String | validate `kind` |
 | 017 | S3 | env | ENV redaction | The `"PAT"` redaction matches substrings (e.g. any name containing `PAT`) — false positives | match whole tokens / known secret-name patterns |
 | 018 | S2 | env | ENV Machine scope | Reading a Machine-scope var without rights → masked | rethrow `UnauthorizedAccessException` |
 | 019 | S2 | process_inspect | PROCESS_INSPECT missing pid, DEF via 5872/24600 | A missing/inaccessible pid → all-null record (or a `-1` masked) instead of a caller-facing miss | say the pid is gone / not accessible |
 | 020 | S3 | archive | ARCHIVE overwrite | Extraction has no overwrite gate (silently overwrites) | add an `overwrite`/`confirm` gate |
-| 021 | S2 | start_process | START_PROCESS missing exe, LAUNCH-08 sibling | A missing executable → masked | rethrow `Win32Exception` as caller-facing naming the exe |
+| 021 | S2 | start_process | START_PROCESS missing exe, LAUNCH-08 sibling | A missing executable → masked | **Addressed in code by D-10 (`CHANGELOG.md [Unreleased]`); not re-run live yet.** rethrow `Win32Exception` as caller-facing naming the exe |
 | 022 | S4 | process kill | PROCESS kill guard (inspection) | No guard against killing the server's own pid | refuse a self-pid kill |
 | 023 | S2 | wmi_query | WMI_QUERY failures / empty class | Any WMI failure (incl. an empty/unknown class) → masked | rethrow `ManagementException` as caller-facing |
 | 024 | S3 | event_log | EVENT_LOG level | An unknown `level` is accepted silently | validate `level` |
@@ -745,18 +745,18 @@ parameter.
 | 036 | S2 | verify_signature | VERIFY_SIGNATURE-02 | A missing file / `""` / a directory → `{Trusted:false}` with no error; a relative path resolves against the server cwd | refuse a missing/relative path with a message |
 | 037 | S3 | defender_status | DEFENDER_STATUS-01 | On a **healthy** Defender (service running, `security_audit` DefenderRunning true) every field is null with Note `could not parse Defender status: … Path: $.FullScanEndTime` | tolerate a null/absent `FullScanEndTime` in the parse instead of failing the whole read |
 | 038 | S3 | hover / click | HOVER-03, CLICK-06 | An off-screen point is refused (good) but the cursor is left at the **primary origin (0,0)**, not the nearest edge / its prior spot | on refusal, restore the prior cursor position (or don't move it) |
-| 039 | S2 | drag | DRAG-05 | `button:"middle"` → masked (`NotSupportedException`) | refuse `middle` at the tool with an `ArgumentException`, or make `NotSupportedException` caller-facing |
+| 039 | S2 | drag | DRAG-05 | `button:"middle"` → masked (`NotSupportedException`) | **Addressed in code by D-10 (`CHANGELOG.md [Unreleased]`); not re-run live yet.** refuse `middle` at the tool with an `ArgumentException`, or make `NotSupportedException` caller-facing |
 | 040 | S4 | hover | HOVER-01/05 | `duration_ms` is unvalidated: negatives accepted (`for -5ms`), no upper cap, no cancellation token (a 10-min hold would block) | validate ≥ 0, cap it, pass the cancellation token like `wait` |
 | 041 | S3 | interact_element | INTERACT_ELEMENT-02 | `toggle` `Detail` reports the **pre-toggle** state (`"now On"` when the box actually went Off) | report the post-toggle state |
-| 042 | S2 | interact_element | INTERACT_ELEMENT-05 | An unsupported action (toggle on a Document, invoke on Text) → masked (`NotSupportedException`) | make `NotSupported()` throw `InvalidOperationException`, or add `NotSupportedException` to the caller-facing set |
+| 042 | S2 | interact_element | INTERACT_ELEMENT-05 | An unsupported action (toggle on a Document, invoke on Text) → masked (`NotSupportedException`) | **Addressed in code by D-10 (`CHANGELOG.md [Unreleased]`); not re-run live yet.** make `NotSupported()` throw `InvalidOperationException`, or add `NotSupportedException` to the caller-facing set |
 | 043 | S3 | audio | AUDIO-01 | `get` returns a fallback `Level:50` when `Get-AudioDevice` is absent, and `Muted` is a constant `false` — it can report neither the real level nor mute (endpoint read 100/30, `get` said 50) | read the endpoint scalar + mute via the core-audio API instead of the optional cmdlet |
 | 044 | S3 | audio | AUDIO-04 | `set` out-of-range accepted: `level:-5`→`"volume set to -5"`, `500`→`"volume set to 500"` while the endpoint clamps to 0/100 | refuse a `level` outside 0-100 naming the range |
 | 045 | S3 | audio | AUDIO-05 | `mute`/`unmute` have no observable effect on the default endpoint (endpoint stayed unmuted after `mute`), and `unmute` is documented as a toggle not a setter | drive the endpoint mute state via the core-audio API |
 | 046 | S4 | find_element | FIND_ELEMENT-02 | The 20-match cap (`UIAutomationService.cs:243`) is undocumented and the result carries no truncation flag | document the cap; add a truncation flag |
 | 047 | S4 | screenshot | SCREENSHOT-14 | With `annotate:true` under a walk budget, the element list is clipped but the metadata JSON carries **no** `truncated`/`elementLimit` (unlike `snapshot`'s JSON) | add the truncation fields to screenshot metadata |
-| 048 | S2 | get_text / interact_element | GET_TEXT-03, INTERACT_ELEMENT-08 | A read of a **gone** element → masked, while `assert_element` on the same id returns a clean `FAIL: … no longer available` | route the element read through the same `IsElementGone` path `assert_element` uses |
+| 048 | S2 | get_text / interact_element | GET_TEXT-03, INTERACT_ELEMENT-08 | A read of a **gone** element → masked, while `assert_element` on the same id returns a clean `FAIL: … no longer available` | **Addressed in code by D-10 (`CHANGELOG.md [Unreleased]`); not re-run live yet.** route the element read through the same `IsElementGone` path `assert_element` uses |
 | 049 | S3 | launch | LAUNCH-07 | `launch calc` twice (with the prior instance minimised) spawned **new** CalculatorApp processes (four total) instead of activating the existing window | detect and activate an existing (incl. minimised) window before spawning |
-| 050 | S2 | launch | LAUNCH-08 | Launching a broken `.lnk` (missing target) → masked (`Win32Exception` from `ShellExecute`) | catch in `Win32AppActivator`; rethrow `InvalidOperationException` naming the missing target |
+| 050 | S2 | launch | LAUNCH-08 | Launching a broken `.lnk` (missing target) → masked (`Win32Exception` from `ShellExecute`) | **Addressed in code by D-10 (`CHANGELOG.md [Unreleased]`); not re-run live yet.** catch in `Win32AppActivator`; rethrow `InvalidOperationException` naming the missing target |
 
 ### 4.3 Notes recorded but not filed as defects
 
