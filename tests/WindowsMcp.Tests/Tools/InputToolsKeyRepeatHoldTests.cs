@@ -630,6 +630,27 @@ public class InputToolsKeyRepeatHoldTests
         rig.TokenOf("up").CanBeCanceled.Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Key_hold_whose_key_down_is_cancelled_sends_no_release_and_no_wait(bool taskCanceled)
+    {
+        // PR #41 P1 (D-31): the real KeyDownAsync throws OCE from ct.ThrowIfCancellationRequested()
+        // before the sink is touched, so the key never went down. A KeyUp would release the key
+        // if the person at the desk happens to be holding it.
+        var rig = new Rig();
+        OperationCanceledException oce = taskCanceled
+            ? new TaskCanceledException("cancelled before the key went down")
+            : new OperationCanceledException("cancelled before the key went down");
+        rig.FailDown = oce;
+
+        var act = () => rig.Tools().Key("a", hold_ms: 100);
+
+        (await act.Should().ThrowAsync<OperationCanceledException>()).Which.Should().BeSameAs(oce);
+        rig.Log.Should().Equal(new[] { "down:a" });
+        rig.Input.Verify(s => s.KeyUpAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     [Fact]
     public async Task Key_hold_failure_outranks_a_release_failure()
     {
@@ -677,6 +698,8 @@ public class InputToolsKeyRepeatHoldTests
         // GREEN 2: the done text, then exactly the stuck key.
         ex.Message.Should().StartWith("'f5' was held for 100 ms");
         ex.Message.Should().Contain("releasing f5 failed twice");
+        // PR #41 P3: the remedy names the tool unambiguously.
+        ex.Message.Should().Contain("may still be down").And.Contain("the key tool");
     }
 
     // ---- K10: a key that needs an implied modifier cannot be held ------------------------------

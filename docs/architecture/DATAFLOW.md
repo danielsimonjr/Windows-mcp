@@ -263,7 +263,8 @@ input sent — and the press becomes:
     ├─► KeyDownAsync("ctrl") … KeyDownAsync("alt")   // fixed order, whatever order the caller wrote
     ├─► ClickAsync(x, y, button, clicks)
     └─► KeyUpAsync in reverse, CancellationToken.None // also after a failed click or a cancellation,
-                                                      // and for a key whose key-down threw; one retry
+                                                      // and for a key whose key-down threw (not one
+                                                      // whose key-down was cancelled); one retry
 Output: {…, "modifiers":"ctrl+shift"}
 ```
 

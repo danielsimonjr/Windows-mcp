@@ -75,7 +75,7 @@ public sealed class InputTools
     /// <summary>
     /// E-3: runs <paramref name="body"/> with <paramref name="keys"/> held, and never leaves one
     /// down. Every key that was sent a key-down — including one whose key-down threw, which may
-    /// have half-landed — is sent a key-up in reverse order, on a token that cannot be cancelled;
+    /// have half-landed, but not one whose key-down was cancelled before it was sent — is sent a key-up in reverse order, on a token that cannot be cancelled;
     /// a release that fails is tried once more, and the others are attempted regardless. A failure
     /// of the body wins, unchanged. When the body succeeded and a key still could not be released,
     /// the caller is told the action happened (so it is not retried) and which keys may be down.
@@ -86,14 +86,25 @@ public sealed class InputTools
         ct.ThrowIfCancellationRequested();
         var sent = new List<string>(keys.Count);
         Exception? failure = null;
+        bool pressed = true;   // false only while the last key in `sent` is waiting on its key-down
         try
         {
             foreach (var key in keys)
             {
                 sent.Add(key);
+                pressed = false;
                 await _input.KeyDownAsync(key, ct);
+                pressed = true;
             }
             await body();
+        }
+        // A cancelled key-down was never sent (the service checks the token before it touches the
+        // keyboard), so it gets no key-up: that would release a modifier the person is holding.
+        // A key-down that failed any other way may have half-landed and is still released.
+        catch (OperationCanceledException ex)
+        {
+            if (!pressed && sent.Count > 0) sent.RemoveAt(sent.Count - 1);
+            failure = ex;
         }
         catch (Exception ex) { failure = ex; }
 
@@ -113,7 +124,7 @@ public sealed class InputTools
         if (releaseFailure is not null)
             throw new InvalidOperationException(
                 $"{done}, but releasing {string.Join(", ", stuck)} failed twice, so {(stuck.Count == 1 ? "that key" : "those keys")} may still be down: " +
-                $"{releaseFailure.Message} Do not repeat the action; press and release {string.Join(", ", stuck)} with key before sending more input.",
+                $"{releaseFailure.Message} Do not repeat the action; press and release {string.Join(", ", stuck)} using the key tool before sending more input.",
                 releaseFailure);
     }
 
@@ -138,7 +149,7 @@ public sealed class InputTools
         var target = await ResolveTargetAsync(x, y, element_id, allowCursor: false);
         if (clicks == 0)
         {
-            await _input.HoverAsync(target.X, target.Y, 0);
+            await _input.HoverAsync(target.X, target.Y, 0, ct);
             return JsonSerializer.Serialize(new { action = "hover", x = target.X, y = target.Y, button = parsedButton.ToString().ToLowerInvariant(), clicks, elementId = target.ElementId, name = target.Name });
         }
         if (held.Length == 0)

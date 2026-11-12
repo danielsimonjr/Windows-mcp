@@ -15,11 +15,12 @@ This is the working list of everything upstream can do that this server cannot (
 defects: D-1…D-4 from the original comparison, D-5…D-9 added later under rule 4 and D-10/D-11
 logged 2026-11-10 — **all eleven are now fixed** — then D-12…D-18, logged 2026-11-11 by the
 D-10/D-11 review, D-19…D-22, logged 2026-11-12 during E-1, D-23…D-27, logged 2026-11-12
-during E-2, and D-28…D-32, logged 2026-11-12 by the E-3 review, all still open; section A's phase 1 — A-7, A-9, A-8, A-11 and A-13 — is done, phase 2 shipped A-1,
+during E-2, and D-28…D-32, logged 2026-11-12 by the E-3 review, all still open except D-31,
+which E-3's review round fixed; section A's phase 1 — A-7, A-9, A-8, A-11 and A-13 — is done, phase 2 shipped A-1,
 phase 3 shipped A-2 with A-3 and A-4 inside it, phase 4 shipped A-6, and phase 5 shipped A-14,
 A-12 phase 1, A-10 and A-5 phase 1 — so every section-A row is ticked, with only A-5's Firefox
 phase left open and A-12's phase 2 deliberately not planned; section B is ticked too, and
-C-5/C-6 close section C — section S, D-12…D-32 and section E are the work that is left; section E
+C-5/C-6 close section C — section S, D-12…D-32 (less D-31) and section E are the work that is left; section E
 is not upstream parity but an agent-efficiency backlog from a review of this server's own tools).
 Each item carries enough context to write a design note and an implementation plan without re-reading
 upstream from scratch: what upstream does and where, what we do today and where, an
@@ -138,7 +139,7 @@ function names are the stable anchor.
 | D-28 | Nothing serialises overlapping input-driving calls: one call's key-up can release a modifier another still holds | P2 | M | E-3 | ☐ |
 | D-29 | The takeover hotkey does not interrupt a `key` hold/repeat, a long `type` or a `drag` in progress | P2 | M | S-11, E-3 | ☐ |
 | D-30 | A key held by `key(hold_ms)` is not released when the host stops mid-hold | P3 | S | E-3 | ☐ |
-| D-31 | Cancellation between two modifier key-downs sends a key-up for a modifier that never went down | P3 | S | E-3 | ☐ |
+| D-31 | Cancellation between two modifier key-downs sends a key-up for a modifier that never went down | P3 | S | E-3 | ☑ |
 | D-32 | `click`'s `modifiers` vocabulary (ctrl\|shift\|alt) is narrower than `shortcut`'s | P3 | S | E-3 | ☐ |
 | E-1 | Server instructions in the MCP handshake | P1 | S | — | ☑ |
 | E-2 | `interact_element`: expand, collapse, set_value, scroll_into_view | P1 | S | D-10 | ☑ |
@@ -154,7 +155,8 @@ function names are the stable anchor.
 
 **Suggested order.** **Defects D-1 … D-11 are done** (D-12 … D-18, logged 2026-11-11 by the
 D-10/D-11 review, D-19 … D-22, logged 2026-11-12 during E-1, D-23 … D-27, logged 2026-11-12
-during E-2, and D-28 … D-32, logged 2026-11-12 by the E-3 review, are open), and **so are sections
+during E-2, and D-28 … D-32, logged 2026-11-12 by the E-3 review, are open — except D-31, fixed
+in E-3's review round), and **so are sections
 A, B and C** (A-5's Firefox phase and
 D-2's `interact_element(type) clear` are the open sub-items; A-12's phase 2 is not planned). What
 is left of the parity work is section S: S-11 (the control indicator) is done (PR #32); the quick wins S-8 and S-1 can be interleaved anywhere; S-4 last.
@@ -1025,7 +1027,15 @@ a second time when the hold then ends.
 **Done when.** A graceful stop never leaves a key the server pressed down.
 
 ### D-31 — Cancellation between two key-downs releases a modifier that never went down  `P3 · S`
-- [ ] Not started
+- [x] Done 2026-11-12 — fixed in E-3's review round (PR #41), before E-3 shipped; in
+  `CHANGELOG.md [Unreleased]` under E-3. `HoldingAsync` now drops a key whose key-down ended in
+  `OperationCanceledException` from the release list (the service checks the token before it
+  touches the keyboard), so the keys that went down before it are released in reverse and the
+  cancelled one gets no key-up; a key-down that fails any other way is still released. Tests:
+  `InputToolsClickModifiersTests` (`Click_cancelled_on_a_key_down_releases_only_the_keys_already_down_and_never_clicks`,
+  `…_on_the_first_key_down_releases_nothing`, `…_on_the_last_key_down_releases_the_earlier_keys_in_reverse`,
+  `Click_when_the_second_key_down_throws_releases_the_first_and_never_clicks`). The text below is
+  the defect as logged.
 
 **Found by the E-3 review (2026-11-12), read from the source.**
 
@@ -2049,7 +2059,8 @@ Win key released alone opens Start), an empty part, or a modifier with `clicks:0
 nothing sent. Beyond the sketch: with modifiers the pointer is moved to the target first
 (`HoverAsync`), so a point off every monitor is refused before a bare Alt or Shift tap; the keys go
 down in the fixed order ctrl, shift, alt whatever order the caller wrote. `HoldingAsync` replaces
-the sketch's plain `finally`: every key sent a key-down — including one whose key-down threw — is
+the sketch's plain `finally`: every key sent a key-down — including one whose key-down threw
+anything but a cancellation (a cancelled key-down was never sent and gets no key-up, D-31) — is
 released in reverse on `CancellationToken.None`, a failed release is retried once, a failure of the
 click wins unchanged, and a release that fails twice after a sent click becomes an
 `InvalidOperationException` saying the click was sent and naming the keys that may still be down.
@@ -2066,7 +2077,8 @@ can trigger Sticky Keys — and a held key must need no implied modifier on the 
 `IInputService`; the `Delay` seam keeps them from sleeping). **The "done when" bar is met by the
 unit tests only:** a real Shift-click range select and `key("down", repeat:10)` on a live desktop
 were not run (they are e2e rows CLICK-08 and KEY-08). Neighbour gaps found by the review and not
-fixed are D-28 … D-32.
+fixed are D-28, D-29, D-30 and D-32; the review also logged D-31, which its own fix round closed
+(PR #41).
 
 ### E-4 — `find_element` filters: automation id, control type, class, within, paging  `P2 · M`
 - [ ] Not started

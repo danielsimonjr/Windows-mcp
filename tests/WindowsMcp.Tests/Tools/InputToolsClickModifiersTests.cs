@@ -405,14 +405,25 @@ public class InputToolsClickModifiersTests
             .Should().HaveCount(2).And.OnlyContain(t => t == cts.Token);
     }
 
-    [Fact]
-    public async Task Click_cancelled_between_two_key_downs_releases_both_and_never_clicks()
+    public static TheoryData<Func<CancellationToken, OperationCanceledException>> Cancellations() => new()
     {
-        // The real KeyDownAsync throws OCE synchronously on a cancelled token: the key it was
-        // asked to press is released anyway (decision 1), then the one already down.
+        t => new OperationCanceledException(t),
+        t => new TaskCanceledException("cancelled", null, t),   // an OCE subclass is the same case
+    };
+
+    [Theory]
+    [MemberData(nameof(Cancellations))]
+    public async Task Click_cancelled_on_a_key_down_releases_only_the_keys_already_down_and_never_clicks(
+        Func<CancellationToken, OperationCanceledException> cancellation)
+    {
+        // PR #41 P1 (D-31), re-pins GREEN decision 1 for cancellation: the real KeyDownAsync
+        // throws OCE from ct.ThrowIfCancellationRequested() BEFORE the sink is touched, so that
+        // key never went down. Sending it a KeyUp would release a modifier the person at the
+        // desk may be physically holding. ctrl did go down and is still released.
         var rig = new Rig();
         using var cts = new CancellationTokenSource();
-        rig.FailDown["shift"] = new OperationCanceledException(cts.Token);
+        var oce = cancellation(cts.Token);
+        rig.FailDown["shift"] = oce;
         rig.Input.Setup(s => s.KeyDownAsync("ctrl", It.IsAny<CancellationToken>()))
             .Returns((string k, CancellationToken ct) =>
             {
@@ -423,9 +434,38 @@ public class InputToolsClickModifiersTests
 
         var act = () => rig.Tools().Click(x: 1, y: 2, modifiers: "ctrl+shift", ct: cts.Token);
 
-        await act.Should().ThrowAsync<OperationCanceledException>();
-        rig.Log.Should().Equal(new[] { Hover(1, 2), "down:ctrl", "down:shift", "up:shift", "up:ctrl" });
+        (await act.Should().ThrowAsync<OperationCanceledException>()).Which.Should().BeSameAs(oce);
+        rig.Log.Should().Equal(new[] { Hover(1, 2), "down:ctrl", "down:shift", "up:ctrl" });
+        rig.UpAttempts("shift").Should().Be(0, "a key whose key-down was cancelled was never sent");
+        rig.Clicked.Should().BeFalse();
         rig.ReleaseTokens.Should().OnlyContain(t => !t.CanBeCanceled);
+    }
+
+    [Fact]
+    public async Task Click_cancelled_on_the_first_key_down_releases_nothing()
+    {
+        // PR #41 P1: nothing went down, so nothing comes up.
+        var rig = new Rig();
+        var oce = new OperationCanceledException("cancelled before ctrl went down");
+        rig.FailDown["ctrl"] = oce;
+
+        var act = () => rig.Tools().Click(x: 1, y: 2, modifiers: "ctrl+shift+alt");
+
+        (await act.Should().ThrowAsync<OperationCanceledException>()).Which.Should().BeSameAs(oce);
+        rig.Log.Should().Equal(new[] { Hover(1, 2), "down:ctrl" });
+        rig.Input.Verify(s => s.KeyUpAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Click_cancelled_on_the_last_key_down_releases_the_earlier_keys_in_reverse()
+    {
+        var rig = new Rig();
+        rig.FailDown["alt"] = new OperationCanceledException("cancelled at alt");
+
+        var act = () => rig.Tools().Click(x: 1, y: 2, modifiers: "ctrl+shift+alt");
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        rig.Log.Should().Equal(new[] { Hover(1, 2), "down:ctrl", "down:shift", "down:alt", "up:shift", "up:ctrl" });
     }
 
     // ---- C6 as re-pinned by R4: retry once, then report what may still be down ----------------
@@ -516,7 +556,7 @@ public class InputToolsClickModifiersTests
     }
 
     [Fact]
-    public async Task Click_wraps_the_first_release_attempts_exception_not_the_retrys()
+    public async Task Click_wraps_the_first_release_attempts_exception_not_the_retries()
     {
         var rig = new Rig();
         var firstAttempt = new IOException("first attempt: access denied");
@@ -543,6 +583,22 @@ public class InputToolsClickModifiersTests
         ex.Message.Should().StartWith("The click was sent", "the caller must not repeat a click that landed");
         ex.Message.Should().Contain("releasing shift failed twice",
             "only the key that stayed stuck is listed; alt and ctrl were released");
+    }
+
+    [Fact]
+    public async Task Click_release_failure_message_says_the_key_may_still_be_down_and_names_the_key_tool()
+    {
+        // PR #41 P3: "with key" read as an ordinary word; the remedy names the tool unambiguously.
+        var rig = new Rig();
+        rig.FailUp["shift"] = new IOException("shift stuck");
+
+        var act = () => rig.Tools().Click(x: 1, y: 2, modifiers: "ctrl+shift");
+
+        var ex = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
+        ex.Message.Should().StartWith("The click was sent");
+        ex.Message.Should().Contain("releasing shift failed twice");
+        ex.Message.Should().Contain("may still be down");
+        ex.Message.Should().Contain("the key tool", "the caller is told which tool releases the stuck key");
     }
 
     [Fact]
@@ -663,6 +719,19 @@ public class InputToolsClickModifiersTests
         InputVerb.Str(json, "action").Should().Be("hover");
         // GREEN decision 4: a hover holds nothing, so its result carries no modifiers field at all.
         json.TryGetProperty("modifiers", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Click_with_zero_clicks_forwards_the_request_token_to_the_hover()
+    {
+        // PR #41 P2: the hover-only path honours the request like every other path.
+        var rig = new Rig();
+        using var cts = new CancellationTokenSource();
+
+        await rig.Tools().Click(x: 3, y: 4, clicks: 0, ct: cts.Token);
+
+        rig.Input.Verify(s => s.HoverAsync(3, 4, 0, cts.Token), Times.Once);
+        rig.Input.Verify(s => s.HoverAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
