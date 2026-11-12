@@ -150,7 +150,7 @@ public sealed class InputTools
         if (clicks == 0)
         {
             await _input.HoverAsync(target.X, target.Y, 0, ct);
-            return JsonSerializer.Serialize(new { action = "hover", x = target.X, y = target.Y, button = parsedButton.ToString().ToLowerInvariant(), clicks, elementId = target.ElementId, name = target.Name });
+            return JsonSerializer.Serialize(new { action = "hover", x = target.X, y = target.Y, button = parsedButton.ToString().ToLowerInvariant(), clicks, elementId = target.ElementId, name = target.Name, modifiers = (string?)null });
         }
         if (held.Length == 0)
             await _input.ClickAsync(target.X, target.Y, parsedButton, clicks, ct);

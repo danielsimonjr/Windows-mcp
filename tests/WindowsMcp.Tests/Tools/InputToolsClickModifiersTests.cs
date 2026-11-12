@@ -717,8 +717,10 @@ public class InputToolsClickModifiersTests
 
         rig.Log.Should().Equal(new[] { "hover:3,4,0" });
         InputVerb.Str(json, "action").Should().Be("hover");
-        // GREEN decision 4: a hover holds nothing, so its result carries no modifiers field at all.
-        json.TryGetProperty("modifiers", out _).Should().BeFalse();
+        // PR #41 review (re-pins GREEN decision 4): hover and click answer with one shape, so the
+        // hover result carries the key too - as a JSON null, because a hover holds nothing.
+        json.TryGetProperty("modifiers", out var held).Should().BeTrue("action:hover and action:click share one response shape");
+        held.ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     [Fact]

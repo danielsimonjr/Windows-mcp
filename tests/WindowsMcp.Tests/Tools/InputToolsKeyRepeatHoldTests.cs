@@ -15,7 +15,8 @@ namespace WindowsMcp.Tests.Tools;
 /// <c>key(hold_ms: M)</c> keeps one key down for M ms and always lets it go. Both are composed in
 /// the tool layer from <see cref="IInputService"/>'s PressKey / KeyDown / KeyUp and the
 /// <see cref="InputTools.Delay"/> seam, so one log shows presses, pauses and releases in the order
-/// the desktop would see them, and no test waits in real time.
+/// the desktop would see them. Only <c>The_delay_seam_default_actually_waits</c> touches the real
+/// default delay, and it cancels that delay rather than waiting it out; nothing here sleeps.
 /// </summary>
 [Trait("Category", "Unit")]
 public class InputToolsKeyRepeatHoldTests
@@ -783,17 +784,21 @@ public class InputToolsKeyRepeatHoldTests
     public async Task The_delay_seam_default_actually_waits()
     {
         // R6/T1: the cancellation test above would also pass for an instant default that merely
-        // checks the token; this one fails if the default does not wait out the span.
+        // checks the token (Task.Delay(0, ct), Task.CompletedTask). This one fails for those: a
+        // 30 s delay must still be running after a yield. It then cancels the delay instead of
+        // waiting it out, so there is no wall-clock bound to be flaky on a loaded host, and the
+        // WaitAsync guard keeps a default that ignores the token from hanging the run for 30 s.
         var tools = InputVerb.Tools();
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        using var cts = new CancellationTokenSource();
 
-        var pending = tools.Delay(TimeSpan.FromMilliseconds(100), CancellationToken.None);
+        var pending = tools.Delay(TimeSpan.FromSeconds(30), cts.Token);
+        await Task.Yield();
 
-        pending.IsCompleted.Should().BeFalse("a 100 ms hold must not end the moment it starts");
-        await pending;
-        stopwatch.Stop();
-        stopwatch.Elapsed.TotalMilliseconds.Should().BeGreaterThanOrEqualTo(100 - 16,
-            "100 ms was asked for (allowing one system timer tick of early return)");
+        pending.IsCompleted.Should().BeFalse("a 30 s hold must not end the moment it starts");
+        await cts.CancelAsync();
+        var act = () => pending.WaitAsync(TimeSpan.FromSeconds(10));
+        await act.Should().ThrowAsync<OperationCanceledException>("the running delay ends when the request is cancelled");
+        pending.IsCanceled.Should().BeTrue();
     }
 
     // ---- the advertised surface ---------------------------------------------------------------
