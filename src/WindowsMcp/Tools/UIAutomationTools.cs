@@ -49,6 +49,21 @@ public sealed class UIAutomationTools
         return (parsed, string.IsNullOrWhiteSpace(window) ? null : window);
     }
 
+    /// <summary>E-4: a blank filter is no filter.</summary>
+    private static string? Given(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    /// <summary>
+    /// E-4: <c>within</c> replaces scope and window, so it is refused with a scope other than the
+    /// default (a window title is already refused without scope=window).
+    /// </summary>
+    private static string? WithinOrNull(string? within, FindScope scope)
+    {
+        if (Given(within) is not { } id) return null;
+        if (scope != FindScope.Foreground)
+            throw new ArgumentException("within searches one element's subtree, so it replaces scope and window: give within alone.", nameof(within));
+        return id;
+    }
+
     private static SnapshotScope ParseSnapshotScope(string scope) => scope.ToLowerInvariant() switch
     {
         "desktop" => SnapshotScope.Desktop,
@@ -96,17 +111,38 @@ public sealed class UIAutomationTools
         "Searches the FOREGROUND window by default, resolved at call time — for a multi-step " +
         "workflow pass scope:\"window\" with window:<title> so a notification or another app " +
         "stealing focus cannot change what is searched; scope:\"desktop\" searches every top-level " +
-        "window. Returns at most 20 matches, capped AFTER filtering. A UI element that disappears " +
-        "mid-search is skipped, never fatal.")]
+        "window. Narrow it with automation_id (exact, case-sensitive — the stable way to address an " +
+        "unnamed control such as an icon button), control_type (a UIA type name: Button, Edit, " +
+        "TreeItem, ...) and class_name (exact); all filters combine, and a kind that can never " +
+        "return the control_type is refused. within takes an el_N id and searches inside that " +
+        "element — its descendants, not the element itself — instead of scope and window: a dialog " +
+        "or pane you already hold. Returns {Matches, Total, Offset, Truncated}: max_results matches " +
+        "(default 20, 1-100) starting at offset, in a stable order, with Total counting the matches " +
+        "and Truncated true when there are more to page through. TotalIsLowerBound:true means the " +
+        "search stopped early once the page was full (other windows or thousands of candidates " +
+        "were not examined), so Total is a lower bound. Each match carries AutomationId and ClassName when the " +
+        "control has them. A UI element that disappears mid-search is skipped, never fatal.")]
     public async Task<string> FindElement(
-        [Description("Text to search for in element names (substring, case-insensitive); empty matches all")] string text,
+        [Description("Text to search for in element names (substring, case-insensitive); empty matches all")] string text = "",
         [Description("Element kind: any | interactive (Button, ListItem, MenuItem, Edit, CheckBox, RadioButton, ComboBox, Hyperlink, SplitButton, TabItem, TreeItem, DataItem, HeaderItem, Spinner, Slider, ScrollBar, Document) | text (Text, Edit, Document) | scrollable")] string kind = "any",
         [Description("Search scope: foreground (default) | window (needs 'window') | desktop")] string scope = "foreground",
         [Description("Window title to search, exact or substring, case-insensitive; only with scope=window")] string? window = null,
-        [Description("Include off-screen elements (collapsed panes, virtualised rows, minimised windows). Default false; an Edit with real bounds is kept either way")] bool include_offscreen = false)
+        [Description("Include off-screen elements (collapsed panes, virtualised rows, minimised windows). Default false; an Edit with real bounds is kept either way")] bool include_offscreen = false,
+        [Description("Automation id to match: exact and case-sensitive (the AutomationId a previous result printed)")] string? automation_id = null,
+        [Description("UIA control type name to match, any case: Button, Edit, ComboBox, ListItem, TreeItem, MenuItem, Text, Pane, Window, ...")] string? control_type = null,
+        [Description("Class name to match: exact, any case (the ClassName a previous result printed)")] string? class_name = null,
+        [Description("Element id (el_N) to search inside: its descendants only, not the element itself. Use it instead of scope and window")] string? within = null,
+        [Description("How many matches to return, 1-100 (default 20)")] int max_results = 20,
+        [Description("How many matches to skip first (default 0); with max_results this pages through Total")] int offset = 0)
     {
+        if (max_results is < 1 or > 100)
+            throw new ArgumentException($"max_results must be between 1 and 100, got {max_results}; page through more with offset.", nameof(max_results));
+        if (offset < 0)
+            throw new ArgumentException($"offset must be 0 or more, got {offset}", nameof(offset));
         var (parsedScope, windowTitle) = ParseTarget(scope, window);
-        var result = await _uia.FindElementAsync(text, ParseKind(kind), parsedScope, windowTitle, include_offscreen);
+        var subtree = WithinOrNull(within, parsedScope);
+        var result = await _uia.FindElementAsync(new FindElementRequest(text ?? "", ParseKind(kind), parsedScope, windowTitle,
+            include_offscreen, Given(automation_id), Given(control_type), Given(class_name), subtree, max_results, offset));
         return JsonSerializer.Serialize(result);
     }
 
@@ -156,7 +192,8 @@ public sealed class UIAutomationTools
     [McpServerTool(Title = "Wait for condition", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), Description(
         "Wait until something is true on screen, polling until it is or the timeout passes. condition: " +
         "element_exists (default; an element whose name contains text — the same kind/scope/window/include_offscreen " +
-        "filters as find_element, and scope:\"window\" is re-resolved on every poll so it also serves as 'wait for that app " +
+        "filters as find_element, plus its automation_id, control_type, class_name and within, " +
+        "and scope:\"window\" is re-resolved on every poll so it also serves as 'wait for that app " +
         "to open') | element_enabled (that element, and enabled) | focused_element (the element with keyboard focus has " +
         "that name) | text_exists (the text is anywhere in a snapshot of the scope: element names and values, scrollable " +
         "regions, and with use_dom:true the browser page's words) | active_window (the foreground window's title matches " +
@@ -165,7 +202,7 @@ public sealed class UIAutomationTools
         "not an error; a poll that fails is retried, and when every poll failed Detail says so. A text_exists or " +
         "focused_element poll is a snapshot, so it replaces the previous snapshot's element ids.")]
     public async Task<string> WaitFor(
-        [Description("What to look for: an element name for the element conditions, a window title for active_window, on-screen text for text_exists (substring, case-insensitive)")] string text,
+        [Description("What to look for: an element name for the element conditions, a window title for active_window, on-screen text for text_exists (substring, case-insensitive). Required, except that an element condition with automation_id, control_type or class_name may leave it empty")] string text = "",
         [Description("Timeout in milliseconds")] int timeout_ms = 10000,
         [Description("Poll interval in milliseconds")] int interval_ms = 500,
         [Description("Element kind: any | interactive | text | scrollable")] string kind = "any",
@@ -173,7 +210,11 @@ public sealed class UIAutomationTools
         [Description("Window title to search; only with scope=window")] string? window = null,
         [Description("Include off-screen elements. Default false — otherwise the wait can succeed on an element that is not visible yet")] bool include_offscreen = false,
         [Description("What to wait for: element_exists (default) | element_enabled | focused_element | text_exists | active_window (aliases: element, enabled, focused, text, window)")] string condition = "element_exists",
-        [Description("For text_exists/focused_element in a browser: read the web page (the RootWebArea document, A-5) instead of the window chrome")] bool use_dom = false)
+        [Description("For text_exists/focused_element in a browser: read the web page (the RootWebArea document, A-5) instead of the window chrome")] bool use_dom = false,
+        [Description("For element_exists/element_enabled: automation id to match, exact and case-sensitive; with it text may be empty")] string? automation_id = null,
+        [Description("For element_exists/element_enabled: UIA control type name to match (Button, Edit, TreeItem, ...); with it text may be empty")] string? control_type = null,
+        [Description("For element_exists/element_enabled: class name to match, exact, any case; with it text may be empty")] string? class_name = null,
+        [Description("For element_exists/element_enabled: element id (el_N) whose descendants are searched, instead of scope and window")] string? within = null)
     {
         if (timeout_ms is < 0 or > 120000)
             throw new ArgumentException($"timeout_ms must be between 0 and 120000, got {timeout_ms}", nameof(timeout_ms));
@@ -189,11 +230,29 @@ public sealed class UIAutomationTools
             _ => throw new ArgumentException(
                 $"Unknown condition '{condition}'; wait_for returns when one of these appears or holds: element_exists|element_enabled|focused_element|text_exists|active_window (aliases element|enabled|focused|text|window)", nameof(condition)),
         };
-        if (string.IsNullOrWhiteSpace(text))
+        bool searchesElements = parsedCondition is WaitCondition.ElementExists or WaitCondition.ElementEnabled;
+        if (!searchesElements)
+        {
+            // These filters describe an element to find; the other conditions read a snapshot or
+            // the window list and would silently ignore them.
+            RefuseFilter(automation_id, nameof(automation_id));
+            RefuseFilter(control_type, nameof(control_type));
+            RefuseFilter(class_name, nameof(class_name));
+            RefuseFilter(within, nameof(within));
+            void RefuseFilter(string? value, string name)
+            {
+                if (Given(value) is not null)
+                    throw new ArgumentException($"{name} only applies to element_exists and element_enabled, not {WaitConditions.NameOf(parsedCondition)}.", name);
+            }
+        }
+        bool hasPropertyFilter = Given(automation_id) is not null || Given(control_type) is not null || Given(class_name) is not null;
+        if (string.IsNullOrWhiteSpace(text) && !(searchesElements && hasPropertyFilter))
             throw new ArgumentException($"{WaitConditions.NameOf(parsedCondition)} needs text: what to look for.", nameof(text));
 
         var (parsedScope, windowTitle) = ParseTarget(scope, window);
-        var request = new WaitRequest(parsedCondition, text, timeout_ms, interval_ms, ParseKind(kind), parsedScope, windowTitle, include_offscreen, use_dom);
+        var subtree = WithinOrNull(within, parsedScope);
+        var request = new WaitRequest(parsedCondition, text, timeout_ms, interval_ms, ParseKind(kind), parsedScope, windowTitle, include_offscreen, use_dom,
+            Given(automation_id), Given(control_type), Given(class_name), subtree);
         return JsonSerializer.Serialize(await _uia.WaitForAsync(request));
     }
 }

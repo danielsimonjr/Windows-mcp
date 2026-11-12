@@ -291,12 +291,26 @@ refused naming its state unless `restore_first: true`. The window is never raise
 and the `After` bounds in `{Window, Before, After, MatchStrategy, Score, Restored}` are re-read
 from the window rather than echoed back from the request.
 
+`find_element(text?, kind?, scope?, window?, include_offscreen?, automation_id?, control_type?,
+class_name?, within?, max_results?, offset?)` searches the foreground window (or `scope: "window"`
+with a title, or the whole desktop) for elements whose name contains `text`. `automation_id`
+(exact, case-sensitive) addresses an unnamed control such as an icon button directly, with `text`
+left out; `control_type` (a UIA type name: `Button`, `Edit`, `TreeItem`, …) and `class_name`
+(exact, any case) narrow further, and every match — like `get_element` and `get_state` — carries
+the control's `AutomationId` and `ClassName` when it has them. `within: "el_N"` searches only the
+descendants of an element you already hold, such as a dialog, instead of a scope. The result is a
+page, `{Matches, Total, Offset, Truncated}`: `max_results` (1–100, default 20) matches from
+`offset`, with `Truncated: true` when there are more; `TotalIsLowerBound: true` means the search
+stopped counting once the page was full, so `Total` is a floor.
+
 `wait(seconds)` pauses in-process (more than 0, at most 60) — use it between an action and the
 next `snapshot` instead of a PowerShell sleep. `wait_for(text, …, condition?, use_dom?)` is the
 conditional wait: `element_exists` (default), `element_enabled`, `focused_element`, `text_exists`
 (the text anywhere in a snapshot of the scope, `use_dom: true` reading a browser page instead of
 the window chrome) or `active_window` (the foreground window's title, exact → substring → fuzzy
-70+); the aliases `element`, `enabled`, `focused`, `text` and `window` are accepted. It always
+70+); the aliases `element`, `enabled`, `focused`, `text` and `window` are accepted. The two
+element conditions take `find_element`'s `automation_id`, `control_type`, `class_name` and
+`within` too (with one of the first three, `text` may be empty); the others refuse them. It always
 returns `{Satisfied, Condition, ElapsedMs, Attempts, Detail, Element?}` — a timeout is
 `Satisfied: false` carrying the last `Detail`, not an error and not the string `"null"`.
 `timeout_ms` is 0–120000 and `interval_ms` 0–5000.

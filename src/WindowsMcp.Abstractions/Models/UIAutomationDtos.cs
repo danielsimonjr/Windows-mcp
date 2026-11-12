@@ -6,6 +6,8 @@ namespace WindowsMcp.Abstractions.Models;
 /// A-3: scroll position and scrollability when the element exposes a ScrollPattern, null when it
 /// does not. Additive — every construction that predates A-3 keeps compiling.
 /// </param>
+/// <param name="AutomationId">E-4: the control's UIA automation id (a Win32 control id, a XAML x:Name); omitted from JSON when the provider reports none.</param>
+/// <param name="ClassName">E-4: the control's UIA class name; omitted from JSON when the provider reports none.</param>
 public record ElementInfo(
     string ElementId,
     string Name,
@@ -16,7 +18,9 @@ public record ElementInfo(
     string? Value,
     bool? IsChecked,
     bool? IsSelected,
-    ScrollInfo? Scroll = null);
+    ScrollInfo? Scroll = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? AutomationId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ClassName = null);
 
 public record Bounds(int X, int Y, int Width, int Height);
 
@@ -43,7 +47,44 @@ public record ElementTree(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Truncated = false,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int ElementLimit = 0);
 
-public record FindElementResult(ElementInfo[] Matches);
+/// <summary>
+/// One page of a find. <paramref name="Total"/> counts every match, <paramref name="Truncated"/>
+/// says there are (or may be) matches this page does not carry — ask again with a higher offset —
+/// and <paramref name="TotalIsLowerBound"/>, present only when true, says the search stopped
+/// early (the page was full and other windows or thousands of candidates were left unexamined),
+/// so there are at least that many.
+/// </summary>
+[method: JsonConstructor]
+public record FindElementResult(
+    ElementInfo[] Matches,
+    int Total,
+    int Offset = 0,
+    bool Truncated = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool TotalIsLowerBound = false)
+{
+    /// <summary>One page that is the whole result: Total is the match count, nothing truncated.</summary>
+    public FindElementResult(ElementInfo[] Matches) : this(Matches, Matches.Length) { }
+}
+
+/// <summary>
+/// E-4: everything a find can be asked. <paramref name="AutomationId"/> is exact and
+/// case-sensitive, <paramref name="ClassName"/> exact in any case, <paramref name="ControlType"/>
+/// a UIA control type name; a blank filter is no filter. <paramref name="Within"/> is an element
+/// id whose descendants are searched INSTEAD of a scope or window (the element itself is not a match). <paramref name="MaxResults"/> is
+/// 1-100 and <paramref name="Offset"/> skips that many matches, in walk order.
+/// </summary>
+public record FindElementRequest(
+    string Text = "",
+    FindKind Kind = FindKind.Any,
+    FindScope Scope = FindScope.Foreground,
+    string? WindowTitle = null,
+    bool IncludeOffscreen = false,
+    string? AutomationId = null,
+    string? ControlType = null,
+    string? ClassName = null,
+    string? Within = null,
+    int MaxResults = 20,
+    int Offset = 0);
 
 public enum FindKind { Interactive, Text, Scrollable, Any }
 
@@ -227,7 +268,12 @@ public record WaitRequest(
     FindScope Scope = FindScope.Foreground,
     string? WindowTitle = null,
     bool IncludeOffscreen = false,
-    bool UseDom = false);
+    bool UseDom = false,
+    // E-4: find_element's filters, for the element conditions only.
+    string? AutomationId = null,
+    string? ControlType = null,
+    string? ClassName = null,
+    string? Within = null);
 
 /// <summary>
 /// B-6 (roadmap C4): the answer a wait always gives. A timeout is

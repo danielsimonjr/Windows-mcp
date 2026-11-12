@@ -2,6 +2,43 @@
 
 ### Added
 
+- **`find_element` filters by automation id, control type and class, searches inside an element,
+  and pages** (E-4). Six parameters on an existing tool, so an unnamed icon button is one call by
+  a stable property, and a dialog the caller already holds is searched on its own:
+  - `automation_id` is exact and case-sensitive. Results print it sanitised (A-13), so an id
+    copied from a result always finds its control: the provider's exact match runs first, and only
+    when nothing under that root (window or `within` element) matched is it scanned again
+    comparing the printed form. `control_type` is a UIA type name in any case; an unknown name is
+    refused listing every valid one, and a `kind` that can never return the type (`kind:text` with
+    `Button`) is refused rather than answered with an empty page. `class_name` is exact in any
+    case. All filters combine with `text`, `kind` and `include_offscreen`; a blank filter is no
+    filter.
+  - `within` takes an `el_N` id and searches that element's descendants instead of `scope` and
+    `window` (refused together with either); the element itself is never a match. An unknown or
+    expired id gets the element cache's refusal, and one whose control was destroyed is reported
+    gone, not answered with an empty page.
+  - `max_results` (1-100, default 20) and `offset` (0 or more) page through the matches in walk
+    order; see Changed for the result.
+  `get_element`, `get_state` and every `find_element` match carry `AutomationId` and `ClassName`
+  when the control has them (sanitised; omitted from the JSON otherwise, so an element without
+  them prints exactly as before). Snapshot rows and the snapshot JSON tree do not (parity D-34).
+  `wait_for`'s `element_exists` and `element_enabled` take the same four filters; with
+  `automation_id`, `control_type` or `class_name` its `text` may be empty (`within` alone still
+  needs text); the filters are refused for `focused_element`, `text_exists` and `active_window`;
+  a bad filter or an unknown, expired or destroyed `within` id is refused before the first poll,
+  not after the timeout; and a wait's find stops as soon as it has its page, without counting.
+  New `IUIAutomationService.FindElementAsync(FindElementRequest, ct)` and the
+  `FindElementRequest` record; the positional overload stays and delegates, and `WaitRequest`
+  gains the four filter fields. Logic in `Services/UIAutomationService.cs` (`FindFilter.From`,
+  `ParseControlType`, `KindTypes`, `FindOnSta`, `WithinRoot`, `CollectFrom`, `Consider`,
+  `FindCondition`, `IsMatch`, `SameText`); the `find_element` and `wait_for` descriptions are
+  rewritten in `Tools/UIAutomationTools.cs`. No tool added (still 69), no new service. Tests:
+  `UIAutomationServiceFindFiltersTests` (Unit, a fake tree),
+  `UIAutomationServiceFindFiltersIntegrationTests` (Integration, real Win32 controls in
+  `Fixtures/OwnedFindFiltersWindow.cs`), `FindElementDtosTests`,
+  `UIAutomationToolsFindFiltersTests`, and additions to `UIAutomationToolsWaitForTests`,
+  `UIAutomationToolsTests` and `HttpTransportTests`. Not verified live (the `UIAutomation`
+  category was not run). Gaps found and not fixed are parity D-33 … D-38.
 - **`click` holds modifiers; `key` repeats and holds** (E-3). Two parameters on existing tools, so
   a Shift-click range select is one call and ten Down arrows are one call:
   - `click(modifiers:…)` takes `ctrl` (alias `control`), `shift` and `alt` joined with `+`, in any
@@ -573,6 +610,16 @@
 
 ### Changed
 
+- **`find_element` returns a page with a total, and `text` is optional** (E-4; closes parity
+  D-20 — a contract change). The result was `{Matches}`, silently capped at 20; it is now
+  `{Matches, Total, Offset, Truncated}`: `Total` counts every match, `Truncated` is true whenever
+  matches exist past this page (ask again with a higher `offset`), and `TotalIsLowerBound: true`
+  (present only when true) says the search stopped early — once the page is full no further
+  window's walk is started, and inside the window where it filled at most 5 000 more candidates
+  are examined (`FindCountBudget`), so `Total` is a floor. Element ids are minted only for the
+  matches on the page, so counting does not grow the element cache. `text` now defaults to `""`
+  in `find_element` and `wait_for` (whitespace-only is treated as none). A cancelled find stops
+  within one candidate instead of finishing the walk on the shared UI thread.
 - **The off-screen refusal names `scroll_into_view`, and refusals quote at most 80 characters of a
   name** (E-2). An element-targeted `click`, `type`, `scroll`, `drag`, `multi_select` or
   `multi_edit` on an element that reports offscreen read `… is off-screen: scroll it into view or

@@ -942,15 +942,22 @@ public class HttpTransportTests
         var waitFor = tools.Single(t => t.Name == ToolName(tools, "waitfor"));
         var schema = waitFor.ProtocolTool.InputSchema.GetProperty("properties");
 
+        // E-4 appends find_element's four filters for the element conditions; the nine B-6 names
+        // and their defaults are unchanged.
         schema.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(
             ["text", "timeout_ms", "interval_ms", "kind", "scope", "window", "include_offscreen",
-             "condition", "use_dom"]);
+             "condition", "use_dom", "automation_id", "control_type", "class_name", "within"]);
         schema.GetProperty("condition").GetProperty("default").GetString().Should().Be("element_exists",
             "the default is exactly what the tool did before B-6");
         schema.GetProperty("use_dom").GetProperty("default").GetBoolean().Should().BeFalse();
         schema.GetProperty("timeout_ms").GetProperty("default").GetInt32().Should().Be(10_000);
         schema.GetProperty("interval_ms").GetProperty("default").GetInt32().Should().Be(500);
         waitFor.ProtocolTool.Description.Should().Contain("active_window").And.Contain("text_exists");
+        // E-4 R10: text is optional, so a schema-validating client can send a property-only wait.
+        var required = waitFor.ProtocolTool.InputSchema.TryGetProperty("required", out var r)
+            ? r.EnumerateArray().Select(e => e.GetString()).ToArray()
+            : [];
+        required.Should().NotContain("text");
     }
 
     /// <summary>

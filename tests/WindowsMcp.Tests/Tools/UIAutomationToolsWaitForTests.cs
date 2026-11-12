@@ -327,12 +327,235 @@ public class UIAutomationToolsWaitForTests
     public void WaitFor_keeps_the_seven_parameters_it_had_in_the_order_it_had_them()
     {
         // Callers pass text positionally and the schema order is what the model copies; the two
-        // new parameters go on the END.
+        // new parameters go on the END. E-4 appends its four find filters after those, again on
+        // the end.
         var names = typeof(UIAutomationTools).GetMethod(nameof(UIAutomationTools.WaitFor))!
             .GetParameters().Select(p => p.Name).ToArray();
 
         names.Should().Equal(
             "text", "timeout_ms", "interval_ms", "kind", "scope", "window", "include_offscreen",
-            "condition", "use_dom");
+            "condition", "use_dom",
+            "automation_id", "control_type", "class_name", "within");
+    }
+
+    // ---- E-4 (RED): the four find filters on the element conditions ---------------------------
+    // element_exists and element_enabled run a find every poll, so they take find_element's
+    // automation_id / control_type / class_name / within. The other three conditions never search
+    // elements (a snapshot, or the window list), so a filter there would be silently ignored: it is
+    // refused, in the tool's existing mismatch style ("window is only used with scope=window").
+
+    [Theory]
+    [InlineData("element_exists", WaitCondition.ElementExists)]
+    [InlineData("enabled", WaitCondition.ElementEnabled)]
+    public async Task WaitFor_forwards_the_four_find_filters_for_the_element_conditions(string condition, WaitCondition expected)
+    {
+        var seen = new List<WaitRequest>();
+
+        await new UIAutomationTools(Waiting(seen: seen).Object).WaitFor(
+            "Save", condition: condition, automation_id: "btnSave", control_type: "button", class_name: "Button", within: "el_3");
+
+        var request = seen.Should().ContainSingle().Subject;
+        request.Condition.Should().Be(expected);
+        (request.AutomationId, request.ControlType, request.ClassName, request.Within)
+            .Should().Be(("btnSave", "button", "Button", "el_3"));
+        request.Scope.Should().Be(FindScope.Foreground);
+        request.WindowTitle.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task WaitFor_without_filters_sends_none()
+    {
+        var seen = new List<WaitRequest>();
+
+        await new UIAutomationTools(Waiting(seen: seen).Object).WaitFor("Save");
+
+        var request = seen.Should().ContainSingle().Subject;
+        (request.AutomationId, request.ControlType, request.ClassName, request.Within)
+            .Should().Be(((string?)null, (string?)null, (string?)null, (string?)null));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("  ")]
+    public async Task WaitFor_treats_blank_filters_as_none(string blank)
+    {
+        // Model clients send "" for what they do not use; a blank within must not conflict with a
+        // scope, and a blank filter must not reach the service as a filter.
+        var seen = new List<WaitRequest>();
+
+        await new UIAutomationTools(Waiting(seen: seen).Object).WaitFor(
+            "Save", scope: "desktop", automation_id: blank, control_type: blank, class_name: blank, within: blank);
+
+        var request = seen.Should().ContainSingle().Subject;
+        (request.AutomationId, request.ControlType, request.ClassName, request.Within)
+            .Should().Be(((string?)null, (string?)null, (string?)null, (string?)null));
+        request.Scope.Should().Be(FindScope.Desktop);
+    }
+
+    [Theory]
+    [InlineData("text_exists", "automation_id")]
+    [InlineData("text_exists", "control_type")]
+    [InlineData("text_exists", "class_name")]
+    [InlineData("text_exists", "within")]
+    [InlineData("focused_element", "automation_id")]
+    [InlineData("focused_element", "within")]
+    [InlineData("active_window", "class_name")]
+    [InlineData("window", "within")]          // an alias resolves first, then the rule applies
+    public async Task WaitFor_refuses_a_find_filter_with_a_condition_that_does_not_search_elements(string condition, string parameter)
+    {
+        var mock = Waiting();
+        var tools = new UIAutomationTools(mock.Object);
+
+        Func<Task> act = () => parameter switch
+        {
+            "automation_id" => tools.WaitFor("Ready", condition: condition, automation_id: "btnSave"),
+            "control_type" => tools.WaitFor("Ready", condition: condition, control_type: "Button"),
+            "class_name" => tools.WaitFor("Ready", condition: condition, class_name: "Button"),
+            _ => tools.WaitFor("Ready", condition: condition, within: "el_3"),
+        };
+
+        var ex = (await act.Should().ThrowAsync<ArgumentException>(
+            "a filter the condition would silently ignore is refused, like window without scope=window")).Which;
+        ex.ParamName.Should().Be(parameter);
+        ex.Message.Should().Contain(parameter, "the refusal names the argument")
+            .And.Contain("element_exists", "and the conditions it IS used with");
+        mock.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("desktop", null)]
+    [InlineData("window", "Notepad")]
+    public async Task WaitFor_refuses_within_with_a_non_default_scope(string scope, string? window)
+    {
+        // E-4 T2 for wait_for: within names the subtree, so a scope or a window title beside it
+        // is a conflict, not a refinement.
+        var mock = Waiting();
+
+        Func<Task> act = () => new UIAutomationTools(mock.Object).WaitFor("Save", scope: scope, window: window, within: "el_3");
+
+        (await act.Should().ThrowAsync<ArgumentException>()).Which.Message.Should().Contain("within");
+        mock.VerifyNoOtherCalls();
+    }
+
+    // GREEN (coordinator decision 5): an element wait may have empty text when a PROPERTY filter
+    // names the control; within alone does not name one.
+
+    [Theory]
+    [InlineData("automation_id")]
+    [InlineData("control_type")]
+    [InlineData("class_name")]
+    public async Task WaitFor_accepts_empty_text_for_an_element_condition_with_a_property_filter(string parameter)
+    {
+        var seen = new List<WaitRequest>();
+        var tools = new UIAutomationTools(Waiting(seen: seen).Object);
+
+        await (parameter switch
+        {
+            "automation_id" => tools.WaitFor("", automation_id: "btnSave"),
+            "control_type" => tools.WaitFor("", condition: "element_enabled", control_type: "Button"),
+            _ => tools.WaitFor("", class_name: "Button"),
+        });
+
+        seen.Should().ContainSingle();
+    }
+
+    [Theory]
+    [InlineData("  ")]
+    [InlineData("\t")]
+    public async Task WaitFor_accepts_whitespace_text_with_a_property_filter_like_empty_text(string text)
+    {
+        // R7: whitespace-only text is no text; the service then matches by the property alone.
+        var seen = new List<WaitRequest>();
+
+        await new UIAutomationTools(Waiting(seen: seen).Object).WaitFor(text, automation_id: "btnSave");
+
+        seen.Should().ContainSingle().Which.AutomationId.Should().Be("btnSave");
+    }
+
+    // ---- R10: text is optional in the schema ----------------------------------------------------
+
+    [Fact]
+    public void WaitFor_text_is_optional_and_defaults_to_empty()
+    {
+        var text = typeof(UIAutomationTools).GetMethod(nameof(UIAutomationTools.WaitFor))!
+            .GetParameters().Single(p => p.Name == "text");
+
+        text.HasDefaultValue.Should().BeTrue("a schema-validating client must be able to send a property-only wait");
+        text.DefaultValue.Should().Be("");
+    }
+
+    [Theory]
+    [InlineData("control_type")]
+    [InlineData("class_name")]
+    [InlineData("automation_id")]
+    public void WaitFor_property_filter_descriptions_say_text_may_be_empty_with_them(string name)
+    {
+        var d = typeof(UIAutomationTools).GetMethod(nameof(UIAutomationTools.WaitFor))!
+            .GetParameters().Single(p => p.Name == name).GetCustomAttribute<DescriptionAttribute>()!.Description;
+
+        d.Should().ContainEquivalentOf("text").And.ContainEquivalentOf("empty");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("  ")]
+    public async Task WaitFor_with_only_within_still_needs_text(string text)
+    {
+        var mock = Waiting();
+
+        Func<Task> act = () => new UIAutomationTools(mock.Object).WaitFor(text, within: "el_3");
+
+        (await act.Should().ThrowAsync<ArgumentException>()).Which.Message.Should().Contain("needs text");
+        mock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task WaitFor_a_blank_property_filter_does_not_lift_the_text_requirement()
+    {
+        var mock = Waiting();
+
+        Func<Task> act = () => new UIAutomationTools(mock.Object).WaitFor("", automation_id: "  ");
+
+        (await act.Should().ThrowAsync<ArgumentException>()).Which.Message.Should().Contain("needs text");
+        mock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task WaitFor_refuses_within_with_a_non_default_scope_naming_within()
+    {
+        var mock = Waiting();
+
+        Func<Task> act = () => new UIAutomationTools(mock.Object).WaitFor("Save", scope: "desktop", within: "el_3");
+
+        (await act.Should().ThrowAsync<ArgumentException>()).Which.ParamName.Should().Be("within");
+        mock.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("automation_id")]
+    [InlineData("control_type")]
+    [InlineData("class_name")]
+    [InlineData("within")]
+    public void WaitFor_new_filter_descriptions_are_not_stubs_and_say_which_conditions_use_them(string name)
+    {
+        var d = typeof(UIAutomationTools).GetMethod(nameof(UIAutomationTools.WaitFor))!
+            .GetParameters().Single(p => p.Name == name).GetCustomAttribute<DescriptionAttribute>()!.Description;
+
+        d.Should().NotBeNullOrWhiteSpace();
+        d.Should().NotContainEquivalentOf("not implemented", "a stub description would ship as the schema");
+        d.Should().Contain("element_exists", "the model must learn the filter is for the element conditions");
+    }
+
+    [Fact]
+    public void WaitFor_filters_default_to_null()
+    {
+        var parameters = typeof(UIAutomationTools).GetMethod(nameof(UIAutomationTools.WaitFor))!.GetParameters();
+
+        foreach (var name in new[] { "automation_id", "control_type", "class_name", "within" })
+        {
+            var p = parameters.Single(x => x.Name == name);
+            p.HasDefaultValue.Should().BeTrue(name);
+            p.DefaultValue.Should().BeNull(name);
+        }
     }
 }

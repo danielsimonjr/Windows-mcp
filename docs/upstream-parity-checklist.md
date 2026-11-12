@@ -7,20 +7,21 @@
 [Unreleased]` carries the section-A phase-1 work (A-7, A-8, A-9, A-11, A-13), phase 2's A-1,
 phase 3's A-2/A-3/A-4, phase 4's A-6 and phase 5's A-14, A-12 (phase 1), A-10 and A-5 (phase 1),
 then all of section B and all of section C (C-7, C-4, C-2, C-3, C-1, C-6, C-5), D-10/D-11, S-11,
-E-1, E-2 and E-3.
+E-1, E-2, E-3 and E-4 (with D-20).
 SDK `ModelContextProtocol` 2.2.0.
 **Status:** Living document — check items off as they ship.
 
-This is the working list of everything upstream can do that this server cannot (plus thirty-two
+This is the working list of everything upstream can do that this server cannot (plus thirty-eight
 defects: D-1…D-4 from the original comparison, D-5…D-9 added later under rule 4 and D-10/D-11
 logged 2026-11-10 — **all eleven are now fixed** — then D-12…D-18, logged 2026-11-11 by the
 D-10/D-11 review, D-19…D-22, logged 2026-11-12 during E-1, D-23…D-27, logged 2026-11-12
-during E-2, and D-28…D-32, logged 2026-11-12 by the E-3 review, all still open except D-31,
-which E-3's review round fixed; section A's phase 1 — A-7, A-9, A-8, A-11 and A-13 — is done, phase 2 shipped A-1,
+during E-2, D-28…D-32, logged 2026-11-12 by the E-3 review, and D-33…D-38, logged 2026-11-12
+during E-4, all still open except D-31, which E-3's review round fixed, and D-20, which E-4
+fixed; section A's phase 1 — A-7, A-9, A-8, A-11 and A-13 — is done, phase 2 shipped A-1,
 phase 3 shipped A-2 with A-3 and A-4 inside it, phase 4 shipped A-6, and phase 5 shipped A-14,
 A-12 phase 1, A-10 and A-5 phase 1 — so every section-A row is ticked, with only A-5's Firefox
 phase left open and A-12's phase 2 deliberately not planned; section B is ticked too, and
-C-5/C-6 close section C — section S, D-12…D-32 (less D-31) and section E are the work that is left; section E
+C-5/C-6 close section C — section S, D-12…D-38 (less D-20 and D-31) and section E are the work that is left; section E
 is not upstream parity but an agent-efficiency backlog from a review of this server's own tools).
 Each item carries enough context to write a design note and an implementation plan without re-reading
 upstream from scratch: what upstream does and where, what we do today and where, an
@@ -128,7 +129,7 @@ function names are the stable anchor.
 | D-17 | `launch` / `start_process` report a ShellExecute hand-off to a running app as a failure | P2 | S | — | ☐ |
 | D-18 | `wait_for` leftovers: a detail id released when the final poll throws; ids of a poll in flight at cancel | P3 | S | D-11 | ☐ |
 | D-19 | `snapshot`'s truncation note says `window=<title>`, which `snapshot` refuses without `scope=window` | P2 | S | — | ☐ |
-| D-20 | `find_element` stops at 20 matches and does not say it stopped | P2 | S | — | ☐ |
+| D-20 | `find_element` stops at 20 matches and does not say it stopped | P2 | S | — | ☑ |
 | D-21 | `wait_for` spins with under 1 ms of budget left: `Task.Delay` of a sub-millisecond span returns at once | P3 | S | — | ☐ |
 | D-22 | `archive` zip/unzip silently overwrite an existing destination; no `overwrite`, no `confirm` | P2 | S | — | ☐ |
 | D-23 | `interact_element type` reports "replaced the whole value" after a ValuePattern write it never read back | P2 | S | E-2 | ☐ |
@@ -141,10 +142,16 @@ function names are the stable anchor.
 | D-30 | A key held by `key(hold_ms)` is not released when the host stops mid-hold | P3 | S | E-3 | ☐ |
 | D-31 | Cancellation between two modifier key-downs sends a key-up for a modifier that never went down | P3 | S | E-3 | ☑ |
 | D-32 | `click`'s `modifiers` vocabulary (ctrl\|shift\|alt) is narrower than `shortcut`'s | P3 | S | E-3 | ☐ |
+| D-33 | `wait_for`'s timeout Detail `no element matching ''` does not name the filter that was searched for | P3 | S | E-4 | ☐ |
+| D-34 | `snapshot` rows and its JSON tree omit the AutomationId / ClassName that `find_element`, `get_element` and `get_state` now carry | P3 | S | E-4 | ☐ |
+| D-35 | Every `ElementInfo` now costs two more cross-process reads, which `get_state`'s tree pays per node | P3 | S | E-4 | ☐ |
+| D-36 | `wait_for element_enabled` judges only the first page (20) of matches | P3 | S | E-4 | ☐ |
+| D-37 | No seam for the find's UIA condition factory: a failure to build a condition cannot be tested | P3 | S | E-4 | ☐ |
+| D-38 | `snapshot(root:<id>)` — walk one element's subtree — is unbuilt | P3 | S–M | E-4 | ☐ |
 | E-1 | Server instructions in the MCP handshake | P1 | S | — | ☑ |
 | E-2 | `interact_element`: expand, collapse, set_value, scroll_into_view | P1 | S | D-10 | ☑ |
 | E-3 | `click` modifiers; `key` repeat and hold | P2 | S | — | ☑ |
-| E-4 | `find_element` filters: automation id, control type, class, within, paging | P2 | M | — | ☐ |
+| E-4 | `find_element` filters: automation id, control type, class, within, paging | P2 | M | — | ☑ |
 | E-5 | `observe`: action tools return the state they produced | P1 | M | D-11 | ☐ |
 | E-6 | `sequence`: an ordered batch of UI steps in one call | P2 | M | E-5, S-11 | ☐ |
 | E-7 | Capture by window / element; OCR word positions | P2 | M | — | ☐ |
@@ -155,8 +162,9 @@ function names are the stable anchor.
 
 **Suggested order.** **Defects D-1 … D-11 are done** (D-12 … D-18, logged 2026-11-11 by the
 D-10/D-11 review, D-19 … D-22, logged 2026-11-12 during E-1, D-23 … D-27, logged 2026-11-12
-during E-2, and D-28 … D-32, logged 2026-11-12 by the E-3 review, are open — except D-31, fixed
-in E-3's review round), and **so are sections
+during E-2, D-28 … D-32, logged 2026-11-12 by the E-3 review, and D-33 … D-38, logged 2026-11-12
+during E-4, are open — except D-31, fixed in E-3's review round, and D-20, fixed by E-4), and
+**so are sections
 A, B and C** (A-5's Firefox phase and
 D-2's `interact_element(type) clear` are the open sub-items; A-12's phase 2 is not planned). What
 is left of the parity work is section S: S-11 (the control indicator) is done (PR #32); the quick wins S-8 and S-1 can be interleaved anywhere; S-4 last.
@@ -170,9 +178,9 @@ opt-in sampling and the annotation table, per-item test seeds) is in
 
 **Section E (added 2026-11-10) is not upstream parity.** It comes from a review of this server's
 own tool surface for how many round trips and tokens an AI client spends driving it, and the same
-review logged D-10 and D-11 (both done 2026-11-11, so E-2 and E-5 are unblocked). E-1, E-2 and
-E-3 are done (2026-11-12). Order for the rest:
-E-4, E-5, E-6, E-7, E-8, E-9, E-10. E-11 is last and conditional: measure the snapshot
+review logged D-10 and D-11 (both done 2026-11-11, so E-2 and E-5 are unblocked). E-1, E-2,
+E-3 and E-4 are done (2026-11-12). Order for the rest:
+E-5, E-6, E-7, E-8, E-9, E-10. E-11 is last and conditional: measure the snapshot
 cost after E-5 before committing to it. `todo.md` still records every UI-automation tool as never
 verified live — that sweep outranks any E item that builds on those tools.
 
@@ -729,7 +737,12 @@ with a window title) and expect no refusal; the note still starts with `Truncate
 **Done when.** Doing exactly what the truncation note says never produces a refusal.
 
 ### D-20 — `find_element` stops at 20 matches and does not say so  `P2 · S`
-- [ ] Not started
+- [x] Done 2026-11-12 — fixed by E-4's paging, which went past this item's flag-only sketch; in
+  `CHANGELOG.md [Unreleased]` under E-4. `FindElementResult` is now `{Matches, Total, Offset,
+  Truncated}` (plus `TotalIsLowerBound: true` when the count stopped early), `Truncated` is true
+  whenever matches exist past the page, and ids are minted only for the matches on the page.
+  Tests: `UIAutomationServiceFindFiltersTests`, `FindElementDtosTests`,
+  `UIAutomationToolsFindFiltersTests`. The text below is the defect as logged.
 
 **Found while pinning the E-1 instructions (2026-11-12), read from the source.**
 
@@ -1082,6 +1095,146 @@ and `lwin` stay refused.
 
 **Done when.** Every modifier name `shortcut` accepts for ctrl, shift or alt is either accepted by
 `click` or refused with a message that lists what is.
+
+### D-33 — `wait_for`'s not-found Detail does not name the filter it searched for  `P3 · S`
+- [ ] Not started
+
+**Found during E-4 (2026-11-12), read from the source.**
+
+**Ours today.** E-4 lets `wait_for(condition:"element_exists"|"element_enabled")` search by
+`automation_id`, `control_type` or `class_name` with an empty `text`. A wait that times out
+reports `WaitConditions.Evaluate`'s Detail `no element matching '<text>'`
+(`Services/UiTree/WaitConditions.cs`), which only knows the text — so a wait for
+`automation_id:"btnSave"` times out with `no element matching ''`, and the caller cannot tell from
+the reply what was actually searched for.
+
+**Sketch.** Pass the request's filters (or a one-line description of them) into the evaluation and
+name them in the Detail: `no element matching automation_id 'btnSave'` (and the text when given).
+Keep the existing wording when only `text` was used.
+
+**Touches.** `Services/UiTree/WaitConditions.cs`, `Services/UIAutomationService.cs`
+(`WaitForAsync(WaitRequest)`), `tests/.../Tools/UIAutomationToolsWaitForTests.cs`,
+`tests/.../Services/UIAutomationServiceFindFiltersTests.cs`.
+
+**Tests.** A timed-out wait by each filter alone and combined with text names every filter given;
+a text-only wait's Detail is unchanged.
+
+**Done when.** A timed-out element wait's Detail names everything it searched for.
+
+### D-34 — Snapshot rows and the snapshot JSON tree omit AutomationId and ClassName  `P3 · S`
+- [ ] Not started
+
+**Found during E-4 (2026-11-12), read from the source.**
+
+**Ours today.** E-4 added `AutomationId` and `ClassName` to `ElementInfo`, so `find_element`,
+`get_element` and `get_state` carry them. `snapshot` builds its rows through the A-2 pipeline
+(`Services/UiTree/UiTraverser.cs` → `UiNode`), not `ElementInfo`, and neither its text rows nor its JSON tree carry either
+property. A client that learns the UI from `snapshot` (the recommended first call) still has to
+make a `get_element` per row to get the id it would pass to `find_element(automation_id:…)`.
+
+**Sketch.** Read both properties in the snapshot walk (in the UIA cache request A-4 already builds,
+so they cost no extra cross-process call) and add them to the JSON node, omitted when empty. Text
+rows stay compact; decide in a design note whether they gain an `id=` column.
+
+**Touches.** `Services/UiTree/UiTraverser.cs` (its `CacheRequest`), `Services/UiTree/UiNode.cs`,
+`Services/UiTree/SnapshotRenderer.cs`, `tests/.../Services/UiTree/*`.
+
+**Tests.** A JSON snapshot node carries both when the provider has them and omits them when empty;
+the text format is unchanged (or changes exactly as the note decides); no extra per-node read.
+
+**Done when.** A snapshot gives the automation id a `find_element` filter needs, without a
+`get_element` per row.
+
+### D-35 — `ElementInfo` makes two more cross-process reads per element  `P3 · S`
+- [ ] Not started
+
+**Found during E-4 (2026-11-12), read from the source.**
+
+**Ours today.** `UIAutomationService.ToInfo` now reads `AutomationId` and `ClassName` with two
+separate, uncached property calls (`TryGetAutomationId`, `TryGetClassName`) on top of the reads it
+already made. `find_element` pays that only for the matches on its page, but `get_state`'s
+`BuildTree` calls `ToInfo` for every node it visits (up to the element budget), so a `get_state` on
+a large window makes two more marshalled calls per node than before E-4. Not measured.
+
+**Sketch.** Measure `get_state` on a large window before and after; if it matters, fetch the
+properties through a FlaUI `CacheRequest` for the tree walk, as A-4 does for the snapshot.
+
+**Touches.** `Services/UIAutomationService.cs` (`ToInfo`, `BuildTree`, `GetStateAsync`).
+
+**Tests.** A fake-tree test counting property reads per node, or a profiled run recorded in the
+item.
+
+**Done when.** `get_state`'s cost per node is measured and either matches pre-E-4 or is accepted
+with the number recorded here.
+
+### D-36 — `wait_for element_enabled` judges only the first page of matches  `P3 · S`
+- [ ] Not started
+
+**Found during E-4 (2026-11-12), read from the source.**
+
+**Ours today.** An element wait's find stops as soon as its page is full (`FindFilter.Count =
+false`, default `MaxResults` 20) and `WaitConditions.Evaluate(ElementEnabled)` picks the first
+enabled element among those matches. When more than twenty controls match and every one of the
+first twenty is disabled, an enabled twenty-first is never seen and the wait times out
+`found '<name>' (el_N) but it is disabled`. (Before E-4 the same cap applied through `MaxMatches`; E-4 kept it.)
+
+**Sketch.** For `element_enabled`, push the enabled test into the find (match only enabled
+elements once at least one disabled match has been seen), or raise the wait's page to the
+100 maximum; either way say in the Detail when the page was full.
+
+**Touches.** `Services/UIAutomationService.cs` (`WaitForAsync(WaitRequest)`),
+`Services/UiTree/WaitConditions.cs`, `tests/.../Services/UIAutomationServiceFindFiltersTests.cs`.
+
+**Tests.** A fake tree with 25 disabled matches then one enabled: `element_enabled` succeeds on it.
+
+**Done when.** An enabled match is found whatever its position among the matches.
+
+### D-37 — The find's UIA condition cannot be made to fail in a test  `P3 · S`
+- [ ] Not started
+
+**Found during E-4 (2026-11-12): a test gap, not a runtime defect.**
+
+**Ours today.** `CollectFrom` builds the walk's condition from `_automation.ConditionFactory`
+(`FindCondition`) outside its per-root `try`, on purpose: a failure to build a condition is a bug
+to surface, not a window to skip. Nothing lets a test substitute the factory, so that rule — and
+the difference from a walk failure, which is skipped — has no test that bites. The fake-tree
+harness evaluates conditions FlaUI built; it cannot make building one throw.
+
+**Sketch.** An `internal` seam for the condition factory (as `DesktopWindows` and `ParentOf` are
+for the tree), null outside tests.
+
+**Touches.** `Services/UIAutomationService.cs`,
+`tests/.../Services/UIAutomationServiceFindFiltersTests.cs`.
+
+**Tests.** A throwing factory fails the find with that exception (not an empty result); a throwing
+`FindAllDescendants` under one root is still skipped.
+
+**Done when.** Deleting the "built outside the try" rule turns a test red.
+
+### D-38 — `snapshot(root:<id>)`: walk one element's subtree  `P3 · S–M`
+- [ ] Not started
+
+**Found during E-4 (2026-11-12): E-4's sketch named it as optional ("its own item if it grows");
+it was not built.**
+
+**Ours today.** `find_element(within:<id>)` searches one element's descendants, but `snapshot`'s
+scopes are still `desktop`, `foreground` and `window`. Seeing a dialog or pane the client already
+holds an id for costs a whole-window snapshot (and its element budget), or a series of
+`find_element(within:…)` pages.
+
+**Sketch.** `snapshot(root:"el_N")` resolves the id through the element cache (unknown, expired and
+destroyed refused as `within` refuses them) and walks only that subtree with the usual budget and
+renderer; it replaces `scope`/`window` and is refused with them. Note that the snapshot evicts the
+previous snapshot's ids — the root id included, so the description must say whether the root is
+re-issued.
+
+**Touches.** `Tools/UIAutomationTools.cs` (`Snapshot`), `Services/UIAutomationService.cs`,
+`Services/UiTree/*`, `Abstractions/Models/UIAutomationDtos.cs` (`SnapshotRequest`), a design note.
+
+**Tests.** A subtree snapshot lists only descendants of the root; `root` with `scope` or `window` is
+refused; an expired or destroyed root is refused before any walk.
+
+**Done when.** A dialog the client holds an id for is snapshotted on its own in one call.
 
 ---
 
@@ -2081,7 +2234,7 @@ fixed are D-28, D-29, D-30 and D-32; the review also logged D-31, which its own 
 (PR #41).
 
 ### E-4 — `find_element` filters: automation id, control type, class, within, paging  `P2 · M`
-- [ ] Not started
+- [x] Done 2026-11-12 — in `CHANGELOG.md [Unreleased]`, ships with the next release (not verified live)
 
 **Ours today.** `find_element` matches a case-insensitive substring of the element's Name, filtered
 by four coarse kinds, and returns at most 20 with no way to ask for the rest. `ElementInfo` carries
@@ -2110,6 +2263,39 @@ control, not the first 20 of everything.
 
 **Done when.** An unnamed toolbar button is addressed directly by automation id inside a named
 dialog, as a single match.
+
+**As landed:** a `FindElementRequest` record (`IUIAutomationService.FindElementAsync(FindElementRequest,
+ct)`; the positional overload stays and delegates). `FindFilter.From` makes every refusal about
+the call before any walk: `within` with a scope or window title, `max_results` outside 1-100, a
+negative `offset`, an unknown `control_type` (`ParseControlType`: any case, the error lists every
+UIA type name) and — beyond the sketch — a `kind` that can never return the `control_type`
+(`KindTypes`); a blank filter is no filter and whitespace-only `text` is no text, so `text` is now
+optional. `automation_id` is exact and case-sensitive, `class_name` exact in any case. Kind,
+control type and the automation id are pushed into the UIA condition (`FindCondition`); class name
+and the name substring stay client-side (`IsMatch`). Results print the id sanitised, so when the
+provider's exact match finds nothing under a root (a window, or `within`) it is scanned once more comparing
+the printed form (`SameText`) — a copied id always finds its control. `within` resolves the id
+through the element cache (unknown and expired are D-11's refusals; a destroyed control is
+`Gone`, not an empty result) and searches its descendants only; the element itself is never a
+match, while a window root under a scope still is. The result is `{Matches, Total, Offset,
+Truncated}`, plus `TotalIsLowerBound: true` when the search stopped early: once the page is full
+no further window's walk is started, and inside the window where it filled at most
+`FindCountBudget` (5 000) more candidates are examined. Ids are minted only for the page.
+`ElementInfo` gains `AutomationId` and `ClassName` (sanitised, omitted when empty), so
+`find_element`, `get_element` and `get_state` carry them; snapshot rows and the snapshot JSON tree
+do not (D-34). `wait_for`'s `element_exists` / `element_enabled` take the four filters, its `text`
+may be empty when `automation_id`, `control_type` or `class_name` is given (not for `within`
+alone), the filters are refused for the other three conditions, a bad filter or a dead `within`
+is refused before the first poll, and a wait's find stops at its first page without counting. A
+cancelled find now stops within one candidate. `snapshot(root:<id>)` was not built (D-38). Tests:
+`UIAutomationServiceFindFiltersTests` (Unit, a fake tree), `UIAutomationServiceFindFiltersIntegrationTests`
+(Integration, real Win32 controls in `Fixtures/OwnedFindFiltersWindow.cs` — including
+`An_unnamed_button_is_found_by_automation_id_inside_a_named_window_as_the_only_match`),
+`FindElementDtosTests`, `UIAutomationToolsFindFiltersTests`, and additions to
+`UIAutomationToolsWaitForTests`, `UIAutomationToolsTests` and `HttpTransportTests`. **The "done
+when" bar is met on the test fixture's own window only:** the `UIAutomation` category and a real
+third-party dialog were not run. Neighbour gaps found and not fixed are D-33 … D-38; D-20 is
+closed by this item.
 
 ### E-5 — `observe`: action tools return the state they produced  `P1 · M`
 - [ ] Not started

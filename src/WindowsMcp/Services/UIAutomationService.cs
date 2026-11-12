@@ -177,7 +177,23 @@ public sealed class UIAutomationService : IUIAutomationService
             Bounds: TryGetBounds(el),
             Value: TryGetValue(el),
             IsChecked: TryGetChecked(el),
-            IsSelected: TryGetSelected(el));
+            IsSelected: TryGetSelected(el),
+            // E-4: the two properties that tell identically named controls apart. Empty is null,
+            // so an element without them serialises exactly as it did before.
+            AutomationId: NullIfEmpty(UiText.Sanitize(TryGetAutomationId(el))),
+            ClassName: NullIfEmpty(UiText.Sanitize(TryGetClassName(el))));
+    }
+
+    private static string? NullIfEmpty(string? s) => string.IsNullOrEmpty(s) ? null : s;
+
+    private static string? TryGetAutomationId(AutomationElement el)
+    {
+        try { return el.Properties.AutomationId.ValueOrDefault; } catch { return null; }
+    }
+
+    private static string? TryGetClassName(AutomationElement el)
+    {
+        try { return el.Properties.ClassName.ValueOrDefault; } catch { return null; }
     }
 
     // A-13: every UI-supplied string goes through UiText.Sanitize before it reaches a DTO.
@@ -237,10 +253,6 @@ public sealed class UIAutomationService : IUIAutomationService
     {
         try { return el.Patterns.SelectionItem.PatternOrDefault?.IsSelected.Value; } catch { return null; }
     }
-
-    /// <summary>Result cap. Applied AFTER every filter (D-7) so an on-screen match is never
-    /// crowded out by off-screen ones. A real element budget on the walk itself is A-4.</summary>
-    private const int MaxMatches = 20;
 
     /// <summary>
     /// D-6's interactive set, now owned by <see cref="UiClassifier"/> (A-2) so the find path and
@@ -484,23 +496,140 @@ public sealed class UIAutomationService : IUIAutomationService
     public Task<FindElementResult> FindElementAsync(string text, FindKind kind = FindKind.Any,
         FindScope scope = FindScope.Foreground, string? windowTitle = null,
         bool includeOffscreen = false, CancellationToken ct = default)
+        => FindElementAsync(new FindElementRequest(text, kind, scope, windowTitle, includeOffscreen), ct);
+
+    /// <summary>
+    /// E-4: after the page is full, at most this many further candidates are examined to count
+    /// <see cref="FindElementResult.Total"/>. Past it the total is a lower bound and says so.
+    /// </summary>
+    internal const int FindCountBudget = 5000;
+
+    /// <summary>
+    /// E-4: one find. Name, kind and visibility as before, plus automation id (exact), control
+    /// type, class name (exact, any case), an element to search inside instead of a window
+    /// (<see cref="FindElementRequest.Within"/>: its descendants, not the element) and a page of
+    /// the matches with the total.
+    /// </summary>
+    public Task<FindElementResult> FindElementAsync(FindElementRequest request, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        if (scope == FindScope.Window && string.IsNullOrWhiteSpace(windowTitle))
-            throw new ArgumentException("scope=window requires windowTitle: the title of the window to search.", nameof(windowTitle));
-        if (scope != FindScope.Window && windowTitle is not null)
-            throw new ArgumentException("windowTitle is only used with scope=window.", nameof(windowTitle));
+        var filter = FindFilter.From(request);   // every refusal about the call, before any walk
+        return OnStaAsync(() => FindOnSta(filter, ct), ct);
+    }
 
-        return OnStaAsync(() =>
+    /// <summary>A validated <see cref="FindElementRequest"/>: blanks are gone and the control type is parsed.</summary>
+    private sealed record FindFilter(string Text, FindKind Kind, FindScope Scope, string? WindowTitle, bool IncludeOffscreen,
+        string? AutomationId, ControlType? ControlType, string? ClassName, string? Within, int MaxResults, int Offset)
+    {
+        public static FindFilter From(FindElementRequest r)
         {
-            var hits = new List<ElementInfo>(MaxMatches);
-            foreach (var root in RootsFor(scope, windowTitle))
+            static string? Given(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
+
+            var within = Given(r.Within);
+            if (within is not null)
             {
-                if (hits.Count >= MaxMatches) break;
-                CollectFrom(root, text, kind, includeOffscreen, hits);
+                if (r.Scope != FindScope.Foreground || r.WindowTitle is not null)
+                    throw new ArgumentException("within searches one element's subtree, so it replaces scope and window: give within alone.", "within");
             }
-            return new FindElementResult(hits.ToArray());
-        }, ct);
+            else
+            {
+                if (r.Scope == FindScope.Window && string.IsNullOrWhiteSpace(r.WindowTitle))
+                    throw new ArgumentException("scope=window requires windowTitle: the title of the window to search.", "windowTitle");
+                if (r.Scope != FindScope.Window && r.WindowTitle is not null)
+                    throw new ArgumentException("windowTitle is only used with scope=window.", "windowTitle");
+            }
+            if (r.MaxResults is < 1 or > 100)
+                throw new ArgumentException($"maxResults must be between 1 and 100, got {r.MaxResults}; page through more with offset.", "maxResults");
+            if (r.Offset < 0)
+                throw new ArgumentException($"offset must be 0 or more, got {r.Offset}", "offset");
+
+            // A kind that can never return the control type is a contradiction, not "no such
+            // control": refuse it, or the caller reads an empty result as an answer.
+            var type = ParseControlType(Given(r.ControlType));
+            if (type is { } wanted && KindTypes(r.Kind) is { } allowed && Array.IndexOf(allowed, wanted) < 0)
+                throw new ArgumentException(
+                    $"control type {wanted} is never returned by kind {r.Kind.ToString().ToLowerInvariant()}, which covers " +
+                    $"{string.Join(", ", allowed)}. Drop kind, or pick one of those types.", "controlType");
+
+            // Whitespace-only text is no text: a name is never matched on blanks alone.
+            return new FindFilter(Given(r.Text) ?? "", r.Kind, r.Scope, r.WindowTitle, r.IncludeOffscreen,
+                Given(r.AutomationId), type, Given(r.ClassName), within, r.MaxResults, r.Offset);
+        }
+
+        /// <summary>
+        /// False for a wait: it needs the first matches, not how many there are, so the search
+        /// stops the moment its page is full and <see cref="FindElementResult.Total"/> is a floor.
+        /// </summary>
+        public bool Count { get; init; } = true;
+
+        /// <summary>The filters a UIA property condition can carry, for the provider to apply.</summary>
+        public bool HasPropertyFilter => AutomationId is not null || ControlType is not null || ClassName is not null;
+    }
+
+    private static readonly ControlType[] TextControlTypes = [ControlType.Text, ControlType.Edit, ControlType.Document];
+
+    /// <summary>The control types a kind can return, or null when it can return any.</summary>
+    private static ControlType[]? KindTypes(FindKind kind) => kind switch
+    {
+        FindKind.Interactive => InteractiveControlTypes,
+        FindKind.Text => TextControlTypes,
+        _ => null,
+    };
+
+    private static readonly string[] ControlTypeNames =
+        Enum.GetNames<ControlType>().Where(n => n != nameof(ControlType.Unknown)).OrderBy(n => n, StringComparer.Ordinal).ToArray();
+
+    private static ControlType? ParseControlType(string? name)
+    {
+        if (name is null) return null;
+        var trimmed = name.Trim();
+        var match = ControlTypeNames.FirstOrDefault(n => string.Equals(n, trimmed, StringComparison.OrdinalIgnoreCase));
+        return match is null
+            ? throw new ArgumentException($"Unknown control type '{UiRefusals.Clip(trimmed)}'; expected a UIA control type name: {string.Join(", ", ControlTypeNames)}.", "controlType")
+            : Enum.Parse<ControlType>(match);
+    }
+
+    /// <summary>What one find has gathered so far: the page, and the count of everything that matched.</summary>
+    private sealed class FindTally(FindFilter filter)
+    {
+        public readonly List<ElementInfo> Page = new(filter.MaxResults);
+        public int Total;
+        public int ExaminedAfterFull;
+        public bool LowerBound;
+        public bool PageFull => Page.Count >= filter.MaxResults;
+    }
+
+    private FindElementResult FindOnSta(FindFilter filter, CancellationToken ct)
+    {
+        var tally = new FindTally(filter);
+        // within searches INSIDE the element: the container the caller already holds is not one
+        // of its own matches (a wait for "Save" inside the "Save As" dialog must not be satisfied
+        // by the dialog). A window root is still a candidate, as it always was.
+        bool inside = filter.Within is not null;
+        foreach (var root in filter.Within is { } id ? [WithinRoot(id)] : RootsFor(filter.Scope, filter.WindowTitle))
+        {
+            ct.ThrowIfCancellationRequested();
+            // Another window's walk is a full cross-process marshal. Once the page is full it is
+            // not worth one just to count: say the total is a floor instead.
+            if (tally.PageFull) tally.LowerBound = true;
+            if (tally.LowerBound) break;
+            CollectFrom(root, filter, tally, rootIsCandidate: !inside, ct);
+        }
+        return new FindElementResult(tally.Page.ToArray(), tally.Total, filter.Offset,
+            Truncated: tally.LowerBound || tally.Total > filter.Offset + tally.Page.Count,
+            TotalIsLowerBound: tally.LowerBound);
+    }
+
+    /// <summary>
+    /// E-4: the element a <c>within</c> search is rooted at. An id that is unknown or expired is
+    /// the cache's own refusal (D-11); one whose control was destroyed is reported gone — an empty
+    /// result would say "nothing in there" about a container that is not there.
+    /// </summary>
+    private AutomationElement WithinRoot(string id)
+    {
+        var el = ResolveCached(id);
+        if (IsGone(el)) throw UiRefusals.Gone(id);
+        return el;
     }
 
     /// <summary>
@@ -516,7 +645,7 @@ public sealed class UIAutomationService : IUIAutomationService
         }
 
         AutomationElement[] windows;
-        try { windows = _automation.GetDesktop().FindAllChildren(); }
+        try { windows = DesktopWindows is { } seam ? seam() : _automation.GetDesktop().FindAllChildren(); }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             LogSkipped("the desktop's window list", ex);
@@ -549,37 +678,73 @@ public sealed class UIAutomationService : IUIAutomationService
         foreach (var w in named) yield return w;
     }
 
-    /// <summary>Collects matches from one window root into <paramref name="hits"/>, stopping at
-    /// <see cref="MaxMatches"/>. Neither a failed walk nor a failed element aborts the search.</summary>
-    private void CollectFrom(AutomationElement root, string text, FindKind kind, bool includeOffscreen, List<ElementInfo> hits)
+    /// <summary>
+    /// Counts the matches under one root into <paramref name="tally"/> and describes the ones on
+    /// the requested page. Neither a failed walk nor a failed element aborts the search. Only an
+    /// element on the page is given an id: counting the rest must not fill the id cache.
+    /// </summary>
+    private void CollectFrom(AutomationElement root, FindFilter filter, FindTally tally, bool rootIsCandidate, CancellationToken ct)
     {
-        // The root itself is a candidate: with a window-scoped search the window element is not one
-        // of its own descendants, and find_element("Notepad") should still find the window. The kind
-        // test has to be applied CLIENT-side here — the UIA condition below only filters descendants,
-        // so without this every window Pane counted as a match for every kind and filled the cap.
-        if (RootMatchesKind(root, kind) && TryEvaluate(root, text, kind, includeOffscreen) is { } rootInfo)
-            hits.Add(rootInfo);
+        int matchesBefore = tally.Total;
 
-        AutomationElement[] candidates;
-        try
+        // The root itself is a candidate: with a window-scoped search the window element is not one
+        // of its own descendants, and find_element("Notepad") should still find the window. Every
+        // filter has to be applied CLIENT-side here — the UIA condition below only filters
+        // descendants, so without this every window Pane counted as a match and filled the page.
+        if (rootIsCandidate && RootMatchesKind(root, filter.Kind)) Consider(root, filter, tally, ct);
+
+        // Push what a property condition can express into the walk so the provider marshals
+        // fewer elements. Name stays client-side: UIA property conditions are exact-match and
+        // find_element is documented as a "contains" search. Built outside the try below: a
+        // failure to build a condition is a bug to surface, not a window to skip.
+        var cf = _automation.ConditionFactory;
+        Walk(FindCondition(cf, filter, exactAutomationId: true));
+
+        // The provider compared the automation id as it stores it. The id this server PRINTS is
+        // sanitised (trimmed, control characters dropped), so an id copied from a result can miss
+        // that exact test. Only when nothing under this root matched exactly is the root scanned
+        // again with the id compared client-side, in its printed form.
+        if (filter.AutomationId is not null && tally.Total == matchesBefore)
+            Walk(FindCondition(cf, filter, exactAutomationId: false));
+
+        void Walk(ConditionBase? condition)
         {
-            // Push the control-type filter into the UIA condition so the provider marshals fewer
-            // elements. Name stays client-side: UIA property conditions are exact-match and
-            // find_element is documented as a "contains" search.
-            var condition = KindCondition(_automation.ConditionFactory, kind);
-            candidates = condition is null ? root.FindAllDescendants() : root.FindAllDescendants(condition);
+            AutomationElement[] candidates;
+            try
+            {
+                candidates = condition is null ? root.FindAllDescendants() : root.FindAllDescendants(condition);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                LogSkipped($"window '{TryGetName(root)}'", ex);
+                return;
+            }
+
+            foreach (var el in candidates)
+            {
+                if (tally.LowerBound) return;
+                Consider(el, filter, tally, ct);
+            }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+    }
+
+    /// <summary>One candidate: counted if it matches, described if it falls on the page.</summary>
+    private void Consider(AutomationElement el, FindFilter filter, FindTally tally, CancellationToken ct)
+    {
+        // The walk runs on the one STA thread every element tool shares: a cancelled call must
+        // give it back within a candidate, not at the end of the tree.
+        ct.ThrowIfCancellationRequested();
+        if (tally.PageFull && (!filter.Count || tally.ExaminedAfterFull++ >= FindCountBudget))
         {
-            LogSkipped($"window '{TryGetName(root)}'", ex);
+            tally.LowerBound = true;   // there is more to look at than this call will
             return;
         }
+        if (!IsMatch(el, filter)) return;
 
-        foreach (var el in candidates)
-        {
-            if (hits.Count >= MaxMatches) return;
-            if (TryEvaluate(el, text, kind, includeOffscreen) is { } info) hits.Add(info);
-        }
+        int index = tally.Total++;
+        if (index < filter.Offset || tally.PageFull) return;
+        try { tally.Page.Add(ToInfo(el)); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { tally.Total--; }
     }
 
     /// <summary>
@@ -599,6 +764,20 @@ public sealed class UIAutomationService : IUIAutomationService
         try { return el.ControlType; } catch { return ControlType.Unknown; }
     }
 
+    /// <summary>
+    /// E-4: the kind condition AND the exact-property filters. Class name is left to
+    /// <see cref="IsMatch"/>: it is matched in any case, and a UIA condition is case-sensitive.
+    /// The automation id is pushed down only for the exact pass (see <see cref="CollectFrom"/>).
+    /// </summary>
+    private static ConditionBase? FindCondition(ConditionFactory cf, FindFilter filter, bool exactAutomationId)
+    {
+        var parts = new List<ConditionBase>(3);
+        if (KindCondition(cf, filter.Kind) is { } kind) parts.Add(kind);
+        if (filter.ControlType is { } type) parts.Add(cf.ByControlType(type));
+        if (exactAutomationId && filter.AutomationId is { } automationId) parts.Add(cf.ByAutomationId(automationId));
+        return parts.Count switch { 0 => null, 1 => parts[0], _ => new AndCondition(parts.ToArray()) };
+    }
+
     private static ConditionBase? KindCondition(ConditionFactory cf, FindKind kind) => kind switch
     {
         FindKind.Text => new OrCondition(
@@ -610,29 +789,39 @@ public sealed class UIAutomationService : IUIAutomationService
     };
 
     /// <summary>
-    /// Decides whether one element is a match, and turns it into an <see cref="ElementInfo"/>.
+    /// Decides whether one element is a match.
     /// EVERY read here is guarded, and the whole method is wrapped: a desktop always contains
     /// elements that are about to die (a fading tooltip, a closing menu, a virtualised row), and
     /// before D-5 any one of them failed the entire call. Catching broadly is deliberate — a
     /// provider can raise PropertyNotSupportedException or a bare COMException as well as
     /// UIA_E_ELEMENTNOTAVAILABLE, and none of that is worth failing a search over.
     /// </summary>
-    private ElementInfo? TryEvaluate(AutomationElement el, string text, FindKind kind, bool includeOffscreen)
+    private static bool IsMatch(AutomationElement el, FindFilter filter)
     {
         try
         {
             // Cheapest discriminating test first: one Name read, and it cuts hardest when the
             // caller passed text. Visibility costs two reads, so it runs on the survivors.
-            if (text.Length > 0 && !TryGetName(el).Contains(text, StringComparison.OrdinalIgnoreCase)) return null;
-            if (kind == FindKind.Scrollable && !TryIsScrollable(el)) return null;
-            if (!includeOffscreen && !IsVisibleEnough(el)) return null;
-            return ToInfo(el);
+            if (filter.Text.Length > 0 && !TryGetName(el).Contains(filter.Text, StringComparison.OrdinalIgnoreCase)) return false;
+            if (filter.ControlType is { } type && TryGetControlTypeEnum(el) != type) return false;
+            if (filter.AutomationId is { } automationId && !SameText(TryGetAutomationId(el), automationId, StringComparison.Ordinal)) return false;
+            if (filter.ClassName is { } className && !SameText(TryGetClassName(el), className, StringComparison.OrdinalIgnoreCase)) return false;
+            if (filter.Kind == FindKind.Scrollable && !TryIsScrollable(el)) return false;
+            if (!filter.IncludeOffscreen && !IsVisibleEnough(el)) return false;
+            return true;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return null;
+            return false;
         }
     }
+
+    /// <summary>
+    /// The provider's value against what the caller sent — as the provider reports it, or as this
+    /// server prints it (sanitised), so an id copied from a result always finds its control.
+    /// </summary>
+    private static bool SameText(string? actual, string wanted, StringComparison comparison)
+        => actual is not null && (string.Equals(actual, wanted, comparison) || string.Equals(UiText.Sanitize(actual), wanted, comparison));
 
     /// <summary>
     /// D-7: upstream's <c>is_visible = area &gt; 0 and not is_offscreen</c>, with upstream's
@@ -860,6 +1049,12 @@ public sealed class UIAutomationService : IUIAutomationService
     /// cannot say. A property so a test can give a fake element (which has no native parent) one.
     /// </summary>
     internal Func<AutomationElement, AutomationElement?> ParentOf { get; set; }
+
+    /// <summary>
+    /// E-4: the desktop's top-level windows for scope=desktop, so a headless test can give a find
+    /// several fake roots. Null (always, outside tests) means the live desktop.
+    /// </summary>
+    internal Func<AutomationElement[]>? DesktopWindows { get; set; }
 
     private AutomationElement? ControlViewParent(AutomationElement el)
     {
@@ -1297,7 +1492,8 @@ public sealed class UIAutomationService : IUIAutomationService
         {
             // Re-resolved every poll, so scope=window doubles as "wait for that app to open": a
             // window that does not exist yet is a failed poll, which PollAsync retries.
-            var matches = (await FindElementAsync(text, kind, scope, windowTitle, includeOffscreen, token).ConfigureAwait(false)).Matches;
+            var first = FindFilter.From(new FindElementRequest(text, kind, scope, windowTitle, includeOffscreen)) with { Count = false };
+            var matches = (await OnStaAsync(() => FindOnSta(first, token), token).ConfigureAwait(false)).Matches;
             // D-11 R18: only the first match is returned; the rest of this poll's ids go back.
             if (matches.Length > 1) ReleaseIds(matches.Skip(1).Select(m => m.ElementId).ToArray());
             return matches.Length > 0 ? matches[0] : null;
@@ -1363,7 +1559,15 @@ public sealed class UIAutomationService : IUIAutomationService
             throw new ArgumentException($"timeoutMs must be between 0 and 120000, got {request.TimeoutMs}", nameof(request));
         if (request.IntervalMs is < 0 or > 5_000)
             throw new ArgumentException($"intervalMs must be between 0 and 5000, got {request.IntervalMs}", nameof(request));
-        if (string.IsNullOrWhiteSpace(request.Text))
+        bool searchesElements = request.Condition is WaitCondition.ElementExists or WaitCondition.ElementEnabled;
+        // E-4: the element conditions take find_element's filters. Refusals about the CALL come
+        // before the first poll: a poll that throws is retried, which would turn a typo in
+        // control_type or a dead within id into "every poll failed" after the whole timeout.
+        var find = new FindElementRequest(request.Text ?? "", request.Kind, request.Scope, request.WindowTitle,
+            request.IncludeOffscreen, request.AutomationId, request.ControlType, request.ClassName, request.Within);
+        FindFilter? filter = searchesElements ? FindFilter.From(find) with { Count = false } : null;
+        // An unnamed control is found by a property, so text may be empty when one is given.
+        if (string.IsNullOrWhiteSpace(request.Text) && filter?.HasPropertyFilter != true)
             throw new ArgumentException($"{WaitConditions.NameOf(request.Condition)} needs text: what to look for.", nameof(request));
 
         // Each condition gathers only the evidence it reads: active_window never walks a tree.
@@ -1374,10 +1578,19 @@ public sealed class UIAutomationService : IUIAutomationService
             WaitCondition.TextExists or WaitCondition.FocusedElement => async token =>
                 new WaitEvidence(Snapshot: await SnapshotAsync(SnapshotRequestFor(request), token).ConfigureAwait(false)),
             _ => async token =>
-                new WaitEvidence(Matches: (await FindElementAsync(request.Text!, request.Kind, request.Scope,
-                    request.WindowTitle, request.IncludeOffscreen, token).ConfigureAwait(false)).Matches),
+                new WaitEvidence(Matches: (await OnStaAsync(() => FindOnSta(filter!, token), token).ConfigureAwait(false)).Matches),
         };
-        return WaitLoopAsync(request, gather, ct, ReleaseIds);
+        if (filter?.Within is not { } within) return WaitLoopAsync(request, gather, ct, ReleaseIds);
+        return WithinThenWaitAsync(within);
+
+        // The id is looked up once, on the STA thread, before any poll: unknown, expired or
+        // already destroyed is refused exactly as find_element refuses it, instead of failing every
+        // poll until the timeout. A container that dies DURING the wait is a failed poll.
+        async Task<WaitForResult> WithinThenWaitAsync(string id)
+        {
+            await OnStaAsync(() => WithinRoot(id), ct).ConfigureAwait(false);
+            return await WaitLoopAsync(request, gather, ct, ReleaseIds).ConfigureAwait(false);
+        }
     }
 
     /// <summary>D-11 R18: drops ids a wait minted and its result does not carry.</summary>

@@ -109,7 +109,8 @@ public async Task<string> ToolName(/* parameters */)
    { ElementId "el_N" (in the element cache's bounded LRU — 5 000 by default,
      least recently used out first — for get_element/interact_element), Name,
      ControlType, IsEnabled, IsOffscreen, Bounds, Value, IsChecked,
-     IsSelected, Scroll (null here — snapshot populates it) }
+     IsSelected, Scroll (null here — snapshot populates it),
+     AutomationId, ClassName (E-4; omitted from the JSON when the control has none) }
 
 4. ElementTree aggregate:
    ElementTree {
@@ -701,18 +702,24 @@ reads:
 
 ```
 UIAutomationTools.WaitFor(text, timeout_ms, interval_ms, kind, scope, window,
-                          include_offscreen, condition, use_dom)
+                          include_offscreen, condition, use_dom,
+                          automation_id, control_type, class_name, within)
         │  parse condition (element_exists|element_enabled|focused_element|text_exists|
         │   active_window; aliases element|enabled|focused|text|window), validate
-        │   timeout_ms 0..120000, interval_ms 0..5000, non-blank text, ParseTarget(scope, window)
+        │   timeout_ms 0..120000, interval_ms 0..5000, refuse the four E-4 filters for the
+        │   non-element conditions, non-blank text (unless an element condition has
+        │   automation_id|control_type|class_name), ParseTarget(scope, window), within ⊕ scope
         ▼
-UIAutomationService.WaitForAsync(WaitRequest)  →  WaitLoopAsync(request, gather, ct)
+UIAutomationService.WaitForAsync(WaitRequest)
+        │   element conditions: FindFilter.From(...) with { Count = false }  (bad filter refused)
+        │   Within given: WithinRoot(id) once on the STA thread (unknown|expired|Gone refused)
+        │   — both before the first poll —  then  WaitLoopAsync(request, gather, ct)
         │
         │   gather = the evidence that condition reads, and nothing else:
         │     active_window                → IWindowService.ListAsync(...)      (NO UI walk)
         │     text_exists|focused_element  → SnapshotAsync(SnapshotRequestFor(request))
         │                                    (scope mapped, no tree, server budget, UseDom)
-        │     element_exists|_enabled      → FindElementAsync(text, kind, scope, …)
+        │     element_exists|_enabled      → FindOnSta(filter)  (stops at its first 20 matches)
         ▼
   ┌──────────────────────────────────────────────────────────────┐
   │ clock = Stopwatch   attempts = 0   anyCleanPoll = false       │
@@ -927,6 +934,11 @@ overload.
 find_element / snapshot / get_state walks
   └─► a property read or element that fails mid-walk is skipped; a window whose walk throws
       is logged and skipped
+find_element (E-4) — refused before any walk, ArgumentException:
+  within with scope|window · max_results outside 1..100 · offset < 0 · unknown control_type
+  (lists every name) · a kind that can never return the control_type
+  within id → the ResolveCached refusals below; a destroyed control → InvalidOperationException
+              "Element 'el_N' is no longer available: …" (UiRefusals.Gone), never an empty page
 
 Element-targeted calls (get_text, get_table, interact_element; FocusAsync) — D-10 / D-11
   ResolveCached(id) misses  → KeyNotFoundException: "Element 'el_N' has expired: … take a new

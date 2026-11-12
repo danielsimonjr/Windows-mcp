@@ -15,20 +15,41 @@ namespace WindowsMcp.Tests.Tools;
 [Trait("Category", "Unit")]
 public class UIAutomationToolsTests
 {
+    /// <summary>
+    /// E-4: <c>find_element</c> reaches the service through ONE of the two
+    /// <c>FindElementAsync</c> overloads — the positional one before E-4, the
+    /// <see cref="FindElementRequest"/> one after it (pinned by
+    /// <c>UIAutomationToolsFindFiltersTests</c>). These pre-E-4 rows pin WHAT is forwarded, not
+    /// which overload carries it: both are recorded here as the request they mean (the positional
+    /// overload is "the same request with defaults", E-4 D4), and the row asserts exactly one call.
+    /// </summary>
+    private static (Mock<IUIAutomationService> Mock, List<FindElementRequest> Seen) Finding(FindElementResult result)
+    {
+        var seen = new List<FindElementRequest>();
+        var mock = new Mock<IUIAutomationService>();
+        mock.Setup(s => s.FindElementAsync(It.IsAny<string>(), It.IsAny<FindKind>(), It.IsAny<FindScope>(),
+                It.IsAny<string?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .Callback((string text, FindKind kind, FindScope scope, string? window, bool offscreen, CancellationToken _) =>
+                seen.Add(new FindElementRequest(text, kind, scope, window, offscreen)))
+            .ReturnsAsync(result);
+        mock.Setup(s => s.FindElementAsync(It.IsAny<FindElementRequest>(), It.IsAny<CancellationToken>()))
+            .Callback((FindElementRequest r, CancellationToken _) => seen.Add(r))
+            .ReturnsAsync(result);
+        return (mock, seen);
+    }
+
     [Fact]
     public async Task FindElement_passes_interactive_kind_to_service()
     {
         var element = new ElementInfo("el-1", "Submit", "Button", true, false,
             new Bounds(10, 20, 100, 30), null, null, null);
-        var mock = new Mock<IUIAutomationService>();
-        mock.Setup(s => s.FindElementAsync("Submit", FindKind.Interactive, FindScope.Foreground, null, false, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FindElementResult(new[] { element }));
+        var (mock, seen) = Finding(new FindElementResult(new[] { element }));
         var tools = new UIAutomationTools(mock.Object);
 
         var result = await tools.FindElement("Submit", "interactive");
 
         result.Should().Contain("Submit").And.Contain("el-1");
-        mock.VerifyAll();
+        seen.Should().ContainSingle().Which.Should().Be(new FindElementRequest("Submit", FindKind.Interactive, FindScope.Foreground));
     }
 
     /// <summary>
@@ -44,15 +65,11 @@ public class UIAutomationToolsTests
     [InlineData("SCROLLABLE", FindKind.Scrollable)]
     public async Task FindElement_maps_every_advertised_kind(string kind, FindKind expected)
     {
-        var mock = new Mock<IUIAutomationService>();
-        mock.Setup(s => s.FindElementAsync(It.IsAny<string>(), It.IsAny<FindKind>(), It.IsAny<FindScope>(),
-                It.IsAny<string?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FindElementResult([]));
+        var (mock, seen) = Finding(new FindElementResult([]));
 
         await new UIAutomationTools(mock.Object).FindElement("Save", kind);
 
-        mock.Verify(s => s.FindElementAsync("Save", expected, FindScope.Foreground, null, false,
-            It.IsAny<CancellationToken>()), Times.Once);
+        seen.Should().ContainSingle().Which.Should().Be(new FindElementRequest("Save", expected, FindScope.Foreground));
     }
 
     [Fact]
@@ -110,40 +127,34 @@ public class UIAutomationToolsTests
     [Fact]
     public async Task FindElement_defaults_to_the_foreground_window_and_drops_offscreen()
     {
-        var mock = new Mock<IUIAutomationService>();
-        mock.Setup(s => s.FindElementAsync("Save", FindKind.Any, FindScope.Foreground, null, false, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FindElementResult(Array.Empty<ElementInfo>()));
+        var (mock, seen) = Finding(new FindElementResult(Array.Empty<ElementInfo>()));
         var tools = new UIAutomationTools(mock.Object);
 
         await tools.FindElement("Save");
 
-        mock.VerifyAll();
+        seen.Should().ContainSingle().Which.Should().Be(new FindElementRequest("Save", FindKind.Any, FindScope.Foreground, null, false));
     }
 
     [Fact]
     public async Task FindElement_forwards_window_scope_with_its_title()
     {
-        var mock = new Mock<IUIAutomationService>();
-        mock.Setup(s => s.FindElementAsync("Save", FindKind.Any, FindScope.Window, "Notepad", false, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FindElementResult(Array.Empty<ElementInfo>()));
+        var (mock, seen) = Finding(new FindElementResult(Array.Empty<ElementInfo>()));
         var tools = new UIAutomationTools(mock.Object);
 
         await tools.FindElement("Save", scope: "window", window: "Notepad");
 
-        mock.VerifyAll();
+        seen.Should().ContainSingle().Which.Should().Be(new FindElementRequest("Save", FindKind.Any, FindScope.Window, "Notepad", false));
     }
 
     [Fact]
     public async Task FindElement_forwards_desktop_scope_and_include_offscreen()
     {
-        var mock = new Mock<IUIAutomationService>();
-        mock.Setup(s => s.FindElementAsync("", FindKind.Text, FindScope.Desktop, null, true, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FindElementResult(Array.Empty<ElementInfo>()));
+        var (mock, seen) = Finding(new FindElementResult(Array.Empty<ElementInfo>()));
         var tools = new UIAutomationTools(mock.Object);
 
         await tools.FindElement("", "text", scope: "desktop", include_offscreen: true);
 
-        mock.VerifyAll();
+        seen.Should().ContainSingle().Which.Should().Be(new FindElementRequest("", FindKind.Text, FindScope.Desktop, null, true));
     }
 
     [Fact]

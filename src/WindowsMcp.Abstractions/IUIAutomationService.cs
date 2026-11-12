@@ -17,6 +17,12 @@ public interface IUIAutomationService : IDisposable
     Task<FindElementResult> FindElementAsync(string text, FindKind kind = FindKind.Any,
         FindScope scope = FindScope.Foreground, string? windowTitle = null,
         bool includeOffscreen = false, CancellationToken ct = default);
+    /// <summary>
+    /// E-4: the same find with the filters that tell controls apart (automation id, control type,
+    /// class name), a subtree to search instead of a window (<c>Within</c>) and a page of the
+    /// matches. The positional overload above is this one with every new field at its default.
+    /// </summary>
+    Task<FindElementResult> FindElementAsync(FindElementRequest request, CancellationToken ct = default);
     Task<ElementInfo> GetElementAsync(string elementId, CancellationToken ct = default);
     Task<string> GetTextAsync(string elementId, CancellationToken ct = default);
     Task<AssertResult> AssertElementAsync(string elementId, string state, string? expected = null, CancellationToken ct = default);
