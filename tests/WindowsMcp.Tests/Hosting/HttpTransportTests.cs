@@ -1605,6 +1605,39 @@ public class HttpTransportTests
         indicator.IsHotkeyRegistered.Should().BeFalse("and the user's real combination is never registered by a test");
     }
 
+    /// <summary>
+    /// D-10 (R1): the checklist's "Tests." line — a toggle on a control with no TogglePattern
+    /// surfaces through the call-tool filter naming the pattern, the control type and the name,
+    /// not as "An error occurred invoking 'interact_element'.". The service is mocked to throw the
+    /// exact refusal the real one builds (<c>UiRefusals.PatternNotSupported</c>), because a FlaUI
+    /// element cannot be faked; the live service's use of that factory is pinned by
+    /// <c>UIAutomationServiceTests.InteractAsync_toggle_names_the_unsupported_pattern_and_the_control</c>.
+    /// </summary>
+    [Fact]
+    public async Task Interact_element_toggle_on_a_control_without_the_pattern_reaches_the_client_naming_it()
+    {
+        var uia = new Mock<IUIAutomationService>();
+        uia.Setup(s => s.InteractAsync("el_7", "toggle", null, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(WindowsMcp.Services.UiTree.UiRefusals.PatternNotSupported("TogglePattern", "Button", "Save"));
+
+        await using var server = await Harness.StartAsync(
+            configureServices: services => services.AddSingleton(uia.Object));
+        await using var client = await ConnectAsync(server.McpEndpoint);
+        var tools = await client.ListToolsAsync();
+
+        var result = await client.CallToolAsync(ToolName(tools, "interactelement"), new Dictionary<string, object?>
+        {
+            ["element_id"] = "el_7",
+            ["action"] = "toggle",
+        });
+
+        result.IsError.Should().BeTrue();
+        var text = result.Content.OfType<TextContentBlock>().Single().Text;
+        text.Should().NotContain("An error occurred invoking", "the refusal is the answer, not a crash");
+        text.Should().Contain("TogglePattern").And.Contain("Button").And.Contain("'Save'");
+        uia.Verify(s => s.InteractAsync("el_7", "toggle", null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     /// <summary>C-1 R4-7: and the commonest one of all — a file that is not there.</summary>
     [Fact]
     public async Task File_read_of_a_missing_file_reaches_the_client_naming_the_path()

@@ -312,8 +312,7 @@ public sealed class WindowService : IWindowService
         };
 
         // Dispose our wrapper handle; the launched app keeps running independently.
-        using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException($"Failed to launch '{appName}'");
+        using var process = ProcessStartErrors.Start(psi, appName);
 
         return Task.FromResult(process.Id);
     }

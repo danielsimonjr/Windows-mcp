@@ -1140,5 +1140,21 @@ public class WebToolsTests
             "an empty map says 'the caller sent no header'; null says 'the caller sent no headers_json'")
             .And.BeEmpty();
     }
+
+    // ---- D-11 R17: a dom scrape expires the caller's snapshot ids -----------------------------
+
+    [Fact]
+    public void Scrape_description_says_a_dom_read_invalidates_the_previous_snapshots_ids()
+    {
+        // source:"dom" walks the browser through SnapshotAsync, so every id the caller's last
+        // snapshot issued expires. An agent that scrapes between a snapshot and a click has to
+        // be told that BEFORE it loses its ids, not by the expired-id error afterwards.
+        var description = typeof(WebTools).GetMethod(nameof(WebTools.Scrape))!
+            .GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), inherit: false)
+            .Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+
+        description.Should().ContainEquivalentOf("snapshot", "the ids at stake are the snapshot's");
+        description.Should().MatchRegex("(?i)(invalidat|expire|replace)", "and what happens to them is said outright");
+    }
 }
 #pragma warning restore MCP9005

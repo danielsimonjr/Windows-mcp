@@ -6,17 +6,18 @@
 **Ours:** `main` @ `8cb40b6` + the phase-2/3/4/5 branches, 69 tools, plugin `0.7.3`, `CHANGELOG.md
 [Unreleased]` carries the section-A phase-1 work (A-7, A-8, A-9, A-11, A-13), phase 2's A-1,
 phase 3's A-2/A-3/A-4, phase 4's A-6 and phase 5's A-14, A-12 (phase 1), A-10 and A-5 (phase 1),
-then all of section B and all of section C (C-7, C-4, C-2, C-3, C-1, C-6, C-5).
+then all of section B and all of section C (C-7, C-4, C-2, C-3, C-1, C-6, C-5), and D-10/D-11.
 SDK `ModelContextProtocol` 2.2.0.
 **Status:** Living document — check items off as they ship.
 
-This is the working list of everything upstream can do that this server cannot (plus eleven
-defects: D-1…D-4 from the original comparison, D-5…D-9 added later under rule 4 — **all nine are
-now fixed** — and D-10/D-11, logged 2026-11-10 and still open; section A's phase 1 — A-7, A-9, A-8, A-11 and A-13 — is done, phase 2 shipped A-1,
+This is the working list of everything upstream can do that this server cannot (plus eighteen
+defects: D-1…D-4 from the original comparison, D-5…D-9 added later under rule 4 and D-10/D-11
+logged 2026-11-10 — **all eleven are now fixed** — and D-12…D-18, logged 2026-11-11 by the
+D-10/D-11 review and still open; section A's phase 1 — A-7, A-9, A-8, A-11 and A-13 — is done, phase 2 shipped A-1,
 phase 3 shipped A-2 with A-3 and A-4 inside it, phase 4 shipped A-6, and phase 5 shipped A-14,
 A-12 phase 1, A-10 and A-5 phase 1 — so every section-A row is ticked, with only A-5's Firefox
 phase left open and A-12's phase 2 deliberately not planned; section B is ticked too, and
-C-5/C-6 close section C — section S, D-10/D-11 and section E are the work that is left; section E
+C-5/C-6 close section C — section S, D-12…D-18 and section E are the work that is left; section E
 is not upstream parity but an agent-efficiency backlog from a review of this server's own tools).
 Each item carries enough context to write a design note and an implementation plan without re-reading
 upstream from scratch: what upstream does and where, what we do today and where, an
@@ -114,8 +115,15 @@ function names are the stable anchor.
 | S-9 | Claude Desktop Extension (`.mcpb`) + registry `server.json` | P3 | M | — | ☐ |
 | S-10 | Per-tool black-box tester skill | P3 | S | — | ☐ |
 | S-11 | AI-control indicator + takeover hotkey (indicator only — no gating) | P2 | M | A-14 · [S-11](design/S-11-control-indicator.md) | ☑ on its branch, not yet merged |
-| D-10 | `interact_element`'s "pattern not supported" refusal is masked from the caller | P1 | S | — | ☐ |
-| D-11 | Element cache grows without bound outside `snapshot` | P1 | S | — | ☐ |
+| D-10 | `interact_element`'s "pattern not supported" refusal is masked from the caller | P1 | S | — | ☑ |
+| D-11 | Element cache grows without bound outside `snapshot` | P1 | S | — | ☑ |
+| D-12 | Recursive `registry_delete` is not atomic: a sub-key that denies delete leaves the tree half gone | P2 | S–M | D-10 | ☐ |
+| D-13 | `registry_set` with `Binary`/`MultiString` always fails and leaves an empty key behind | P2 | S | — | ☐ |
+| D-14 | `scheduled_task create` accepts a past time and silently replaces an existing task | P2 | S | — | ☐ |
+| D-15 | `interact_element select` with a value leaves the dropdown open when no item matches | P3 | S | — | ☐ |
+| D-16 | A click centre that lands off every monitor is refused naming `x`, a parameter the caller never passed | P3 | S | — | ☐ |
+| D-17 | `launch` / `start_process` report a ShellExecute hand-off to a running app as a failure | P2 | S | — | ☐ |
+| D-18 | `wait_for` leftovers: a detail id released when the final poll throws; ids of a poll in flight at cancel | P3 | S | D-11 | ☐ |
 | E-1 | Server instructions in the MCP handshake | P1 | S | — | ☐ |
 | E-2 | `interact_element`: expand, collapse, set_value, scroll_into_view | P1 | S | D-10 | ☐ |
 | E-3 | `click` modifiers; `key` repeat and hold | P2 | S | — | ☐ |
@@ -128,8 +136,8 @@ function names are the stable anchor.
 | E-10 | Named toolsets on top of S-1 | P3 | S | S-1 | ☐ |
 | E-11 | Stable element ids and a snapshot diff | P3 | L | E-5, D-11 | ☐ |
 
-**Suggested order.** **Defects D-1 … D-9 are done** (D-10 and D-11, logged 2026-11-10, are open —
-see the section-E paragraph below), and **so are sections A, B and C** (A-5's Firefox phase and
+**Suggested order.** **Defects D-1 … D-11 are done** (D-12 … D-18, logged 2026-11-11 by the
+D-10/D-11 review, are open), and **so are sections A, B and C** (A-5's Firefox phase and
 D-2's `interact_element(type) clear` are the open sub-items; A-12's phase 2 is not planned). What
 is left of the parity work is section S: S-11 (the control indicator) is done on
 `feature/control-indicator`; the quick wins S-8 and S-1 can be interleaved anywhere; S-4 last.
@@ -143,7 +151,7 @@ opt-in sampling and the annotation table, per-item test seeds) is in
 
 **Section E (added 2026-11-10) is not upstream parity.** It comes from a review of this server's
 own tool surface for how many round trips and tokens an AI client spends driving it, and the same
-review logged D-10 and D-11. Order: D-10 and D-11 first (E-2 and E-5 depend on them), then E-1,
+review logged D-10 and D-11 (both done 2026-11-11, so E-2 and E-5 are unblocked). Order: E-1,
 E-2, E-3, E-4, E-5, E-6, E-7, E-8, E-9, E-10. E-11 is last and conditional: measure the snapshot
 cost after E-5 before committing to it. `todo.md` still records every UI-automation tool as never
 verified live — that sweep outranks any E item that builds on those tools.
@@ -484,7 +492,7 @@ no complete document still passes through raw.
 ---
 
 ### D-10 — `interact_element`'s "pattern not supported" refusal is masked from the caller  `P1 · S`
-- [ ] Not started
+- [x] Done 2026-11-11 — in `CHANGELOG.md [Unreleased]`, ships with the next release
 
 **Found by the 2026-11-10 tool-surface review** (read from the source, not reproduced live).
 
@@ -508,8 +516,21 @@ type and name through the call-tool filter, not the masked text.
 **Done when.** `interact_element(action:"toggle")` on a plain button returns `IsError` with the
 pattern and the control named.
 
+**As landed:** the whole masked-refusal family, not just the reported case. `NotSupported()` became
+`UiRefusals.PatternNotSupported` (an `InvalidOperationException`), and a middle-button `drag` an
+`ArgumentException` naming `button`. The review then found the same masking wherever a library or
+the OS raised the refusal: FlaUI's exceptions and UIA HRESULTs on `interact_element` / `get_table`
+/ `get_text` (translated by `UiRefusals.Translate` inside `UIAutomationService.Refusing`: disabled,
+element gone, child part gone, not supported), a disabled control refused only after the
+foreground had moved (now refused first), the unreachable foreground-to-desktop fallback
+(`UiRoots.FirstAvailable`), `Process.Start` and packaged activation (`ProcessStartErrors`), registry
+access-denied (`RegistryErrors`), `power_action`'s OS refusals (`IPowerNative` seam), and
+`scheduled_task create`'s unparseable `'daily'` trigger. Each is fixed at its call site; a new IL
+scan in `ToolErrorsTests` fails on any non-caller-facing construction not on a site-keyed,
+reasoned list. Gaps found next to it but outside it are D-12 … D-17.
+
 ### D-11 — Element cache grows without bound outside `snapshot`  `P1 · S`
-- [ ] Not started
+- [x] Done 2026-11-11 — in `CHANGELOG.md [Unreleased]`, ships with the next release
 
 **Found by the 2026-11-10 tool-surface review.** The header comment of `UIAutomationService.cs`
 already records it as a v0.3.0 TODO that never landed.
@@ -533,6 +554,133 @@ cache". Snapshot ids keep their evict-on-next-snapshot rule.
 `get_element` on a snapshot id does not grow the cache; the expired-id message names the remedy.
 
 **Done when.** A loop of 10 000 `find_element` calls leaves the cache at its cap.
+
+**As landed:** `Services/UiTree/ElementCache.cs` — non-snapshot ids in an LRU of
+`max(UiTreeOptions.MaxCachedElements = 5000, 2 × MaxElements)`, snapshot ids exempt and dropped by
+the next snapshot, `get_element` answering under the id passed in. A dead id says *expired* (with
+the hidden snapshot takers — `wait_for` text/focus conditions, `screenshot` annotate, `scrape`
+source dom — and "take a new snapshot") or *unknown*, never "not in cache";
+`assert_element(exists)` on an expired id FAILs saying so. Found on the way and fixed with it:
+`wait_for`'s element conditions minted up to 20 ids per poll and kept them all, so each poll now
+hands back its unused ids (the final poll of a timed-out wait is kept so an id in `Detail`
+resolves). What that release still misses is D-18.
+
+### D-12 — Recursive `registry_delete` is not atomic  `P2 · S–M`
+- [ ] Not started
+
+**Found by the D-10/D-11 review (2026-11-11), reproduced** on a scratch key under `HKCU`.
+
+**Ours today.** `RegistryService.DeleteKeyAsync` counts the descendants first, which proves only
+that the tree can be READ, then calls `DeleteSubKeyTree`. A sub-key that denies DELETE stops the
+call after its siblings are already gone: with children `A\A1` (deletable) and `B` (delete
+denied), `A` and `A\A1` are removed and `B` stays. Since D-10 the refusal at least says the delete
+was denied part-way and that sub-keys may already have been removed; it used to read as a clean
+access-denied naming only the parent. Cancellation is not observed inside the count or the delete.
+
+**Sketch.** Check DELETE access on every descendant before the first mutation (open each with
+`RegistryRights.Delete`, or delete leaf-first under one transaction where the hive supports it) and
+refuse naming the first key that would deny. Observe `ct` per key.
+
+**Done when.** A tree with one sub-key that denies delete is refused naming that sub-key and
+every key is still there.
+
+### D-13 — `registry_set` with `Binary` / `MultiString` always fails and leaves an empty key  `P2 · S`
+- [ ] Not started
+
+**Found by the D-10/D-11 review (2026-11-11), reproduced.**
+
+**Ours today.** The tool passes `data` to `RegistryService.SetAsync` as a string whatever `kind`
+says, so `Binary` and `MultiString` always fail inside `SetValue`, and `DWord`/`QWord` fail on
+non-numeric data. `CreateSubKey` has already run by then, so a key that did not exist is left
+behind empty.
+
+**Sketch.** Convert `data` per kind in the tool (hex or base64 for `Binary`, a JSON array or
+newline-separated text for `MultiString`, an integer parse for `DWord`/`QWord`) and refuse a
+mismatch as an `ArgumentException` naming `data` and `kind` BEFORE the key is created. An unknown
+`kind` should be refused too — today it silently becomes `String`.
+
+**Done when.** A `Binary` value round-trips through `registry_set` / `registry_get`, and a bad
+`DWord` is refused with the key not created.
+
+### D-14 — `scheduled_task create` accepts a past time and silently replaces an existing task  `P2 · S`
+- [ ] Not started
+
+**Found by the D-10/D-11 review (2026-11-11), read from the source.**
+
+**Ours today.** `TaskSchedulerService.ParseTrigger` accepts any date-time, so a time in the past
+registers a task that never fires. `RegisterTaskDefinition(name, td)` replaces a task of the same
+name without saying so. (D-10 made a non-date trigger a caller-facing refusal and stopped the
+description advertising `daily` / `onlogon`; recurring triggers remain a feature nobody has built.)
+
+**Sketch.** Refuse a start time in the past naming `trigger` and the current time; refuse an
+existing name unless an explicit `overwrite: true`, the way `file_manage` does.
+
+**Done when.** A past time and a duplicate name are each refused by name with nothing registered
+or replaced.
+
+### D-15 — `interact_element select` with a value leaves the dropdown open on no match  `P3 · S`
+- [ ] Not started
+
+**Found by the D-10/D-11 review (2026-11-11), read from the source.**
+
+**Ours today.** `select` with a value calls `ExpandCollapse.Expand()` and then searches for the
+item. When no item has that name the call throws `KeyNotFoundException` and the list stays
+expanded — a refusal that left a side effect on screen.
+
+**Sketch.** Collapse again in a `finally` when the item was not selected; or search before
+expanding when the provider exposes its items collapsed.
+
+**Done when.** A `select` for an item that is not there leaves the control as it found it.
+
+### D-16 — An off-monitor click centre is refused naming `x`  `P3 · S`
+- [ ] Not started
+
+**Found by the D-10/D-11 review (2026-11-11), read from the source.**
+
+**Ours today.** `interact_element click` on a control with no usable pattern computes the
+element's centre and clicks it off the STA thread. When that point is on no monitor,
+`InputService` throws `ArgumentOutOfRangeException` naming `x` — a parameter the caller never
+passed, on a tool that takes an element id.
+
+**Sketch.** Refuse in `ClickPoint` when the centre is outside every monitor, naming the element
+and its bounds; `ElementTarget` already makes that check for the input verbs.
+
+**Done when.** The refusal names the element, not `x`.
+
+### D-17 — A ShellExecute hand-off to a running app is reported as a failure  `P2 · S`
+- [ ] Not started
+
+**Found by the D-10/D-11 close-out (2026-11-11), read from the source; pre-existing.**
+
+**Ours today.** `Process.Start` under ShellExecute returns null when the target is handed to a
+process that is already running (a document opened in an open editor, a single-instance app). All
+three start paths (`start_process` with shell execute, `launch` by path, the legacy launch) treat
+null as failure and throw `InvalidOperationException` "no new process was created" — the launch
+worked and the caller is told it did not.
+
+**Sketch.** Treat null under ShellExecute as success with no pid; for `launch`, fall through to the
+window wait by title, which already handles "the window belongs to a process the activation never
+named" (`WindowDetected`).
+
+**Done when.** Opening a second document in a running single-instance app reports success.
+
+### D-18 — `wait_for` id-release leftovers  `P3 · S`
+- [ ] Not started
+
+**Left open on purpose by D-11 (2026-11-11).** Both are bounded by the element cache's cap.
+
+**Ours today.** (1) An unsatisfied element poll's ids are released just before the next poll is
+gathered. If that next poll THROWS and the wait then times out, `Detail` still describes the
+earlier clean poll ("found 'Save' (el_57) but it is disabled") whose ids are already gone.
+(2) A poll still running on the STA thread when the wait is cancelled never returns its result to
+the loop, so the ids it mints are not released; `OnStaAsync` checks the token only before the
+work starts.
+
+**Sketch.** For (1), release pending ids only after the next gather returns cleanly. For (2),
+have the find path report the ids it mints through a caller-supplied sink so the wait can release
+them when the abandoned work finishes.
+
+**Done when.** No `el_N` named in a `wait_for` reply is ever expired on arrival.
 
 ---
 

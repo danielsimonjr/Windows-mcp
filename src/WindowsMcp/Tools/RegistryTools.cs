@@ -55,8 +55,9 @@ public sealed class RegistryTools
                  "recursive: true, and the hive root and the profile/OS roots (Software, Software\\Microsoft, " +
                  "System, SYSTEM\\CurrentControlSet, Environment, ...) are refused outright. Deleting what is " +
                  "not there is not an error: existed:false. Returns {hive, path, valueName?, deleted, existed, " +
-                 "subKeysRemoved?} — subKeysRemoved counts the descendant keys removed with the key. Under HKLM " +
-                 "the server usually lacks the rights; the OS error is passed through.")]
+                 "subKeysRemoved?} — subKeysRemoved counts the descendant keys removed with the key. A key the " +
+                 "server may not change (most of HKLM, unless the server runs elevated) is refused as access " +
+                 "denied naming the key; a tree delete denied part-way says sub-keys may already be gone.")]
     public async Task<string> RegistryDelete(
         [Description("Hive: HKCU, HKLM, HKCR, HKU")] string hive,
         [Description("Subkey path like 'Software\\MyApp'")] string path,

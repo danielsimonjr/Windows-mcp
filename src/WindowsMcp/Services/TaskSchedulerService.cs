@@ -72,15 +72,32 @@ public sealed class TaskSchedulerService : ITaskSchedulerService
         return SystemTask.CompletedTask;
     }
 
+    /// <summary>
+    /// D-10 R13: the one trigger form <c>create</c> accepts — a date and time, parsed with the
+    /// invariant culture — or an <see cref="ArgumentException"/> naming <c>trigger</c> and the
+    /// accepted form, thrown before anything is registered.
+    /// </summary>
+    internal static DateTime ParseTrigger(string trigger)
+    {
+        // InvariantCulture: MCP tool args arrive as locale-neutral JSON strings;
+        // thread culture could otherwise parse "05/06/2026" differently on en-US vs en-GB.
+        if (!string.IsNullOrWhiteSpace(trigger)
+            && DateTime.TryParse(trigger, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var when))
+            return when;
+        throw new ArgumentException(
+            $"trigger '{trigger}' is not a date and time. The only trigger create accepts is a one-time start, " +
+            "e.g. 2026-05-06T09:00:00; recurring triggers (daily, at logon) are not supported.", nameof(trigger));
+    }
+
     public SystemTask CreateAsync(string name, string command, string trigger, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        var start = ParseTrigger(trigger);   // D-10 R13: refused before the scheduler is touched
         using var ts = new TaskService();
         var td = ts.NewTask();
         td.Actions.Add(new ExecAction(command));
-        // InvariantCulture: MCP tool args arrive as locale-neutral JSON strings;
-        // thread culture could otherwise parse "05/06/2026" differently on en-US vs en-GB.
-        td.Triggers.Add(new TimeTrigger(DateTime.Parse(trigger, System.Globalization.CultureInfo.InvariantCulture)));
+        td.Triggers.Add(new TimeTrigger(start));
         ts.RootFolder.RegisterTaskDefinition(name, td);
         return SystemTask.CompletedTask;
     }

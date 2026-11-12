@@ -1,91 +1,73 @@
-using System.ComponentModel;
 using System.Runtime.InteropServices;
-using Windows.Win32;
-using Windows.Win32.Foundation;
-using Windows.Win32.Security;
-using Windows.Win32.System.Shutdown;
 using WindowsMcp.Abstractions;
 
 namespace WindowsMcp.Services;
 
 public sealed class PowerService : IPowerService
 {
+    private readonly IPowerNative _native;
+
+    public PowerService() : this(new Win32PowerNative()) { }
+
+    /// <summary>D-10 R15: the native calls are behind a seam so the refusal path is testable without a power action.</summary>
+    internal PowerService(IPowerNative native) => _native = native;
+
     public Task ExecuteAsync(string action, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
-        switch (action.ToLowerInvariant())
+        var name = action.ToLowerInvariant();
+        bool ok;
+        int error;
+        switch (name)
         {
             case "shutdown":
-                EnableShutdownPrivilege();
-                if (!PInvoke.ExitWindowsEx(EXIT_WINDOWS_FLAGS.EWX_SHUTDOWN, 0))
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Shutdown failed");
+                _native.EnableShutdownPrivilege();
+                ok = _native.ExitWindows(PowerExitKind.Shutdown, out error);
                 break;
             case "reboot":
-                EnableShutdownPrivilege();
-                if (!PInvoke.ExitWindowsEx(EXIT_WINDOWS_FLAGS.EWX_REBOOT, 0))
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Reboot failed");
+                _native.EnableShutdownPrivilege();
+                ok = _native.ExitWindows(PowerExitKind.Reboot, out error);
                 break;
             case "logoff":
                 // Logoff needs no special privilege, but still verify the call succeeded.
-                if (!PInvoke.ExitWindowsEx(EXIT_WINDOWS_FLAGS.EWX_LOGOFF, 0))
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Logoff failed");
+                ok = _native.ExitWindows(PowerExitKind.Logoff, out error);
                 break;
             case "lock":
-                if (!PInvoke.LockWorkStation())
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "LockWorkStation failed");
+                ok = _native.LockWorkStation(out error);
                 break;
             case "sleep":
-                if (!PInvoke.SetSuspendState(false, false, false))
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Sleep failed (suspend may be disabled)");
+                ok = _native.SetSuspendState(hibernate: false, out error);
                 break;
             case "hibernate":
-                if (!PInvoke.SetSuspendState(true, false, false))
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Hibernate failed (hibernation may be disabled)");
+                ok = _native.SetSuspendState(hibernate: true, out error);
                 break;
             default:
                 throw new ArgumentException($"Unknown power action '{action}'; expected shutdown|reboot|logoff|lock|sleep|hibernate");
         }
 
+        if (!ok) throw Refused(name, error);
         return Task.CompletedTask;
     }
 
-    // ExitWindowsEx(SHUTDOWN|REBOOT) silently no-ops unless SeShutdownPrivilege is ENABLED in the
-    // process token. The interactive user holds the privilege; it just needs enabling each run.
-    private static unsafe void EnableShutdownPrivilege()
+    /// <summary>
+    /// D-10 R15: the OS said no. That is an answer the caller has to read (hibernation switched
+    /// off, no interactive desktop to lock, a shutdown already under way), so it is a caller-facing
+    /// type carrying the action and Windows' own reason — as a Win32Exception it was masked.
+    /// </summary>
+    private static InvalidOperationException Refused(string action, int error)
     {
-        HANDLE token;
-        if (!PInvoke.OpenProcessToken(
-                PInvoke.GetCurrentProcess(),
-                TOKEN_ACCESS_MASK.TOKEN_ADJUST_PRIVILEGES | TOKEN_ACCESS_MASK.TOKEN_QUERY,
-                &token))
-            throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenProcessToken failed");
-
-        try
+        // Marshal.GetPInvokeErrorMessage is the text Win32Exception(error).Message carries.
+        var reason = error != 0
+            ? $"{Marshal.GetPInvokeErrorMessage(error)} (Win32 error {error})"
+            : "the call failed and Windows reported no error code";
+        var hint = action switch
         {
-            if (!PInvoke.LookupPrivilegeValue(null, "SeShutdownPrivilege", out LUID luid))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "LookupPrivilegeValue failed");
-
-            var tp = new TOKEN_PRIVILEGES { PrivilegeCount = 1 };
-            tp.Privileges[0] = new LUID_AND_ATTRIBUTES
-            {
-                Luid = luid,
-                Attributes = TOKEN_PRIVILEGES_ATTRIBUTES.SE_PRIVILEGE_ENABLED
-            };
-
-            if (!PInvoke.AdjustTokenPrivileges(token, false, &tp, 0, null, null))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "AdjustTokenPrivileges failed");
-
-            // AdjustTokenPrivileges returns true even when the privilege was not assigned;
-            // ERROR_NOT_ALL_ASSIGNED (1300) means the token does not hold SeShutdownPrivilege.
-            const int ERROR_NOT_ALL_ASSIGNED = 1300;
-            if (Marshal.GetLastWin32Error() == ERROR_NOT_ALL_ASSIGNED)
-                throw new InvalidOperationException(
-                    "SeShutdownPrivilege is not held by this process token; cannot shut down or reboot.");
-        }
-        finally
-        {
-            PInvoke.CloseHandle(token);
-        }
+            "sleep" => " Suspend may be disabled on this machine.",
+            "hibernate" => " Hibernation may be disabled on this machine (powercfg /h).",
+            "lock" => " Locking needs an interactive desktop session.",
+            _ => "",
+        };
+        return new InvalidOperationException($"Windows refused the power action '{action}': {reason}.{hint}");
     }
 }

@@ -1,8 +1,3 @@
-// TODO (v0.3.0): Element cache (_elementCache) is unbounded by design in v0.2.0.
-// Every ToInfo() call inserts a new entry. LRU eviction tracked for v0.3.0 (Task 22).
-// For now, callers should create short-lived UIAutomationService instances per operation
-// if memory pressure is a concern.
-
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -24,10 +19,12 @@ public sealed class UIAutomationService : IUIAutomationService
     private readonly UIA3Automation _automation;
     private readonly BlockingCollection<Action> _workQueue = new();
     private readonly Thread _staThread;
-    private readonly Dictionary<string, AutomationElement> _elementCache = new();
-    private readonly Lock _cacheLock = new();
-    private int _nextId;
-    private int _disposed;   // 0 = alive, 1 = disposed; treat atomically via Interlocked
+    /// <summary>
+    /// D-11: every element id this service has issued and still honours. Snapshot ids last until
+    /// the next snapshot; every other id (find_element, get_state) sits in a bounded LRU.
+    /// </summary>
+    private readonly ElementCache<AutomationElement> _cache;
+    private int _disposed;  // 0 = alive, 1 = disposed; treat atomically via Interlocked
 
     private readonly IInputService _input;
     private readonly IWindowService _windows;
@@ -60,6 +57,7 @@ public sealed class UIAutomationService : IUIAutomationService
         _input = input;
         _windows = windows;
         _treeOptions = treeOptions ?? UiTreeOptions.Default;
+        _cache = new ElementCache<AutomationElement>(ElementCache.CapacityFor(_treeOptions));
         _log = log ?? (ILogger)NullLogger<UIAutomationService>.Instance;
         _automation = new UIA3Automation();
         _staThread = new Thread(WorkerLoop) { IsBackground = true, Name = "WindowsMcp-UA-STA" };
@@ -130,18 +128,17 @@ public sealed class UIAutomationService : IUIAutomationService
 
     private AutomationElement GetForegroundRoot()
     {
-        try
-        {
-            var hwnd = PInvoke.GetForegroundWindow();
-            if (!hwnd.IsNull)
+        // D-10 R24b: FocusedElement() THROWS when nothing is in the foreground (it does not return
+        // null), so the documented desktop fallback was unreachable and get_state, a foreground
+        // find and a foreground snapshot failed masked. Each rung may fail; the desktop is last.
+        return UiRoots.FirstAvailable<AutomationElement>(
+            () =>
             {
-                var window = _automation.FromHandle(HwndPointer(hwnd));
-                if (window is not null) return window;
-            }
-        }
-        catch { /* fall through to focused element / desktop */ }
-
-        return _automation.FocusedElement() ?? _automation.GetDesktop();
+                var hwnd = PInvoke.GetForegroundWindow();
+                return hwnd.IsNull ? null : _automation.FromHandle(HwndPointer(hwnd));
+            },
+            () => _automation.FocusedElement(),
+            () => _automation.GetDesktop());
     }
 
     /// <summary>Null when the budget refused this node; a refused child ends the parent's child list.</summary>
@@ -160,14 +157,16 @@ public sealed class UIAutomationService : IUIAutomationService
         return new ElementTree(info, children.ToArray());
     }
 
-    private ElementInfo ToInfo(AutomationElement el)
+    /// <summary>D-11: every live cached id, snapshot and non-snapshot (test observability).</summary>
+    internal int CachedElementCount => _cache.Count;
+
+    /// <param name="existingId">
+    /// D-11: the id the caller already holds for <paramref name="el"/>. A lookup describes the
+    /// element under that id; only a walk that discovers an element mints a new one.
+    /// </param>
+    private ElementInfo ToInfo(AutomationElement el, string? existingId = null)
     {
-        string id;
-        lock (_cacheLock)
-        {
-            id = $"el_{_nextId++}";
-            _elementCache[id] = el;
-        }
+        string id = existingId ?? _cache.Add(el);
         return new ElementInfo(
             ElementId: id,
             Name: TryGetName(el),
@@ -247,9 +246,6 @@ public sealed class UIAutomationService : IUIAutomationService
     /// the snapshot classify from one list. Same instance, so the two cannot drift.
     /// </summary>
     internal static ControlType[] InteractiveControlTypes => UiClassifier.InteractiveControlTypes;
-
-    /// <summary>Ids the previous snapshot issued; evicted when the next one starts (roadmap C5).</summary>
-    private readonly List<string> _snapshotIds = new();
 
     /// <summary>
     /// A-2: one call for the whole desktop. Header from the A-1 inventory and the cursor, then a
@@ -335,19 +331,17 @@ public sealed class UIAutomationService : IUIAutomationService
             var scrollable = new List<SnapshotScrollable>();
             var trees = new List<ElementTree>();
             var pages = new List<SnapshotPage>();
-            lock (_cacheLock)
+            // No lock around the whole block: every snapshot runs on the one STA thread, so two
+            // cannot interleave, and the cache guards its own state (D-11).
             {
-                foreach (var old in _snapshotIds) _elementCache.Remove(old);
-                _snapshotIds.Clear();
+                _cache.EvictSnapshot();
 
                 foreach (var (title, entries, dom) in perWindow)
                 {
                     var ids = new string[entries.Count];
                     for (int i = 0; i < entries.Count; i++)
                     {
-                        ids[i] = $"el_{_nextId++}";
-                        _elementCache[ids[i]] = entries[i].Element;
-                        _snapshotIds.Add(ids[i]);
+                        ids[i] = _cache.AddSnapshot(entries[i].Element);
                         var (element, region) = Project(entries[i].Node, ids[i]);
                         // A-5 correction 1: the page document keeps its id and its scroll row but is not a control.
                         if (dom == DomState.Page && DomCorrection.SuppressesInteractive(entries[i].Node, entries[i].ParentIndex))
@@ -668,24 +662,17 @@ public sealed class UIAutomationService : IUIAutomationService
         ct.ThrowIfCancellationRequested();
         return OnStaAsync(() =>
         {
-            AutomationElement el;
-            lock (_cacheLock)
-            {
-                if (!_elementCache.TryGetValue(elementId, out el!))
-                    throw new KeyNotFoundException($"Element '{elementId}' not in cache");
-            }
-            return ToInfo(el);
+            // D-11: answer under the caller's own id. Re-minting here grew the cache by one entry
+            // for every element-targeted click, type, scroll and drag.
+            return ToInfo(ResolveCached(elementId), elementId);
         }, ct);
     }
 
     public Task<string> GetTextAsync(string elementId, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        return OnStaAsync(() =>
-        {
-            var el = ResolveCached(elementId);
-            return UiText.Sanitize(el.Patterns.Value.PatternOrDefault?.Value.Value ?? el.Name);
-        }, ct);
+        return OnStaAsync(() => Refusing(elementId, "get_text",
+            el => UiText.Sanitize(el.Patterns.Value.PatternOrDefault?.Value.Value ?? el.Name)), ct);
     }
 
     public Task<AssertResult> AssertElementAsync(string elementId, string state, string? expected = null, CancellationToken ct = default)
@@ -708,14 +695,17 @@ public sealed class UIAutomationService : IUIAutomationService
         if (s != "value" && expected is not null)
             throw new ArgumentException("expected is only used with state=value.", nameof(expected));
 
-        AutomationElement? el;
-        lock (_cacheLock) _elementCache.TryGetValue(elementId, out el);
-        if (el is null)
+        if (!_cache.TryGet(elementId, out var el))
         {
-            // "exists" is the one question where "I don't know that id" is the answer; for every
-            // other state an unknown id is a caller bug (ids only come from find_element/get_state).
-            if (s == "exists") return new AssertResult(elementId, s, false, "unknown element id");
-            throw new KeyNotFoundException($"Element '{elementId}' not in cache");
+            // "exists" is the one question where "I don't hold that id" is the answer, never a throw
+            // (D-4); for every other state a dead id is a caller bug (ids only come from snapshot,
+            // find_element and get_state). D-11: say which miss it is — an id this server issued has
+            // expired and the remedy is a new snapshot; one it never issued is unknown.
+            if (s == "exists")
+                return new AssertResult(elementId, s, false, _cache.WasIssued(elementId)
+                    ? "element id has expired (take a new snapshot)"
+                    : "unknown element id");
+            el = ResolveCached(elementId);   // throws, saying whether the id expired or never existed (D-11)
         }
 
         AssertResult Result(bool pass, string observed) => new(elementId, s, pass, observed);
@@ -726,7 +716,7 @@ public sealed class UIAutomationService : IUIAutomationService
             // destroyed element are handled by the catch below; the Win32 proxy instead keeps
             // answering with defaults (ControlType Pane, empty Name, ProcessId 0), so a ProcessId of
             // 0 is the reliable "gone" signal for a closed HWND.
-            if (el.Properties.ProcessId.ValueOrDefault <= 0)
+            if (IsGone(el))   // R20: also the provider whose process exited, which cannot answer at all
                 return Result(false, "element no longer available");
 
             switch (s)
@@ -824,7 +814,16 @@ public sealed class UIAutomationService : IUIAutomationService
     public async Task<InteractResult> InteractAsync(string elementId, string action, string? value, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        var step = await OnStaAsync(() => InteractOnSta(elementId, action, value), ct).ConfigureAwait(false);
+        // Errors about the CALL come first, before the element is looked at: an unknown action on a
+        // disabled control is still an unknown action.
+        var verb = action.ToLowerInvariant();
+        if (Array.IndexOf(InteractActions, verb) < 0)
+            throw new ArgumentException($"Unknown interact action '{action}'; expected click|invoke|toggle|select|focus|type.", nameof(action));
+        if (verb == "type" && value is null)
+            throw new ArgumentException("'type' requires a value: the text to enter.", nameof(value));
+
+        var step = await OnStaAsync(
+            () => Refusing(elementId, verb, el => InteractOnSta(el, elementId, action, value), acts: true), ct).ConfigureAwait(false);
 
         if (step.PendingClick is { } point)
             await _input.ClickAsync(point.X, point.Y, MouseButton.Left, 1, ct).ConfigureAwait(false);
@@ -836,10 +835,12 @@ public sealed class UIAutomationService : IUIAutomationService
 
     // D-2: every branch either acts through a UIA pattern or fails naming the pattern and the
     // control — never a silent no-op — and the result says which pattern or fallback fired.
-    private InteractStep InteractOnSta(string elementId, string action, string? value)
+    private static readonly string[] InteractActions = ["click", "invoke", "toggle", "select", "focus", "type"];
+
+    private InteractStep InteractOnSta(AutomationElement el, string elementId, string action, string? value)
     {
-        var el = ResolveCached(elementId);
         var a = action.ToLowerInvariant();
+        Exception NotSupported(AutomationElement target, string pattern) => MissingPattern(target, elementId, pattern);
         InteractResult Done(string method, string? detail = null) => new(elementId, a, method, detail);
 
         switch (a)
@@ -880,7 +881,11 @@ public sealed class UIAutomationService : IUIAutomationService
                         ?? throw new KeyNotFoundException($"No item named '{value}' under {Describe(el)}.");
                     if (item.Patterns.SelectionItem.PatternOrDefault is { } itemSelection) { itemSelection.Select(); return new(Done("SelectionItemPattern", $"item '{value}'")); }
                     if (item.Patterns.Invoke.PatternOrDefault is { } itemInvoke) { itemInvoke.Invoke(); return new(Done("InvokePattern", $"item '{value}'")); }
-                    throw NotSupported(item, "SelectionItemPattern");
+                    // R22: the ITEM lacks the pattern (or died after the list opened) — the
+                    // container the caller named is alive, so it is not the one reported gone.
+                    throw IsGone(item)
+                        ? UiRefusals.ChildGone(elementId, a, TryGetControlType(el), TryGetName(el))
+                        : UiRefusals.PatternNotSupported("SelectionItemPattern", TryGetControlType(item), TryGetName(item));
                 }
             case "focus":
                 el.Focus();
@@ -917,17 +922,83 @@ public sealed class UIAutomationService : IUIAutomationService
 
     private static string Describe(AutomationElement el) => $"{TryGetControlType(el)} '{TryGetName(el)}'";
 
-    private static NotSupportedException NotSupported(AutomationElement el, string pattern)
-        => new($"{pattern} not supported on {Describe(el)}.");
+    /// <summary>
+    /// D-10: the refusal for a pattern the element does not offer — a caller-facing type (as a
+    /// NotSupportedException it was masked by the SDK). R11: a destroyed Win32 control does not
+    /// throw here, it just answers every pattern query with "none" and describes itself as
+    /// <c>Unknown ''</c>; probe it first so the caller is told the element is gone, not that an
+    /// unnamed control lacks a pattern.
+    /// </summary>
+    private static InvalidOperationException MissingPattern(AutomationElement el, string elementId, string pattern)
+        => IsGone(el)
+            ? UiRefusals.Gone(elementId)
+            : UiRefusals.PatternNotSupported(pattern, TryGetControlType(el), TryGetName(el));
+
+    /// <summary>
+    /// The liveness probe <c>AssertOnSta</c> uses: providers that raise UIA_E_ELEMENTNOTAVAILABLE
+    /// are caught, and the Win32 proxy, which keeps answering with defaults, reports ProcessId 0.
+    /// </summary>
+    private static bool IsGone(AutomationElement el)
+        => UiRefusals.ProbeSaysGone(() => el.Properties.ProcessId.ValueOrDefault);
+
+    /// <summary>
+    /// True only when the element positively reports disabled. A provider that cannot answer is
+    /// not refused on a guess.
+    /// </summary>
+    private static bool ReportsDisabled(AutomationElement el)
+    {
+        try { return el.Properties.IsEnabled.TryGetValue(out var enabled) && !enabled; }
+        // A timeout propagates like a cancellation: the provider is hung, and letting the verb
+        // run would spend the UIA timeout again on the one STA thread every element tool shares.
+        catch (Exception ex) when (ex is not OperationCanceledException and not TimeoutException) { return false; }
+    }
+
+    /// <summary>
+    /// D-10 R11: runs the STA half of an element call with whatever the TARGET throws translated
+    /// into a refusal the caller can read (a disabled control, a missing pattern or property, an
+    /// element destroyed since its id was issued). Anything <see cref="UiRefusals.Translate"/> does
+    /// not recognise propagates untouched and stays masked.
+    /// </summary>
+    /// <param name="acts">
+    /// R24a: the call acts on the control (invoke, toggle, select, type, click, focus) as opposed
+    /// to reading it. A target that reports disabled is then refused BEFORE any pattern call or
+    /// focus: UIA activates a disabled Win32 control's window on the way to refusing, so the
+    /// refusal used to arrive after the foreground had moved.
+    /// </param>
+    private T Refusing<T>(string elementId, string action, Func<AutomationElement, T> work, bool acts = false)
+    {
+        var el = ResolveCached(elementId);
+        if (acts && ReportsDisabled(el))
+            throw IsGone(el)   // a destroyed control answers "not enabled" too: say which it is
+                ? UiRefusals.Gone(elementId)
+                : new InvalidOperationException($"Cannot {action} {Describe(el)}: the control is disabled.");
+        try
+        {
+            return work(el);
+        }
+        // R23: a timeout, a cancellation and an argument error are rethrown without touching the
+        // element again — every further read of a hung target costs the UIA timeout on this thread.
+        catch (Exception ex) when (UiRefusals.NeedsProbe(ex) && Refusal(ex) is { } refusal)
+        {
+            throw refusal;
+        }
+
+        // Liveness first: a destroyed control answers with defaults ("Unknown ''", no children, no
+        // patterns), so whatever the body concluded about it — "no item named x", "does not
+        // support", "no on-screen bounds" — describes a control that is not there. When the target
+        // IS alive, a gone or disabled failure belongs to a part of it (R22) and says so.
+        Exception? Refusal(Exception ex) => IsGone(el)
+            ? UiRefusals.Gone(elementId, ex)
+            : UiRefusals.Translate(ex, elementId, action, TryGetControlType(el), TryGetName(el), targetIsAlive: true);
+    }
 
     public Task<TableData> GetTableAsync(string elementId, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        return OnStaAsync(() =>
+        return OnStaAsync(() => Refusing(elementId, "get_table", el =>
         {
-            var el = ResolveCached(elementId);
             var grid = el.Patterns.Grid.PatternOrDefault
-                ?? throw new InvalidOperationException("Element doesn't support GridPattern");
+                ?? throw MissingPattern(el, elementId, "GridPattern");
             var rows = grid.RowCount.Value;
             var cols = grid.ColumnCount.Value;
 
@@ -953,7 +1024,7 @@ public sealed class UIAutomationService : IUIAutomationService
                 }
             }
             return BuildTable(headers, data);
-        }, ct);
+        }), ct);
     }
 
     /// <summary>
@@ -975,8 +1046,10 @@ public sealed class UIAutomationService : IUIAutomationService
         {
             // Re-resolved every poll, so scope=window doubles as "wait for that app to open": a
             // window that does not exist yet is a failed poll, which PollAsync retries.
-            var matches = await FindElementAsync(text, kind, scope, windowTitle, includeOffscreen, token).ConfigureAwait(false);
-            return matches.Matches.Length > 0 ? matches.Matches[0] : null;
+            var matches = (await FindElementAsync(text, kind, scope, windowTitle, includeOffscreen, token).ConfigureAwait(false)).Matches;
+            // D-11 R18: only the first match is returned; the rest of this poll's ids go back.
+            if (matches.Length > 1) ReleaseIds(matches.Skip(1).Select(m => m.ElementId).ToArray());
+            return matches.Length > 0 ? matches[0] : null;
         }, timeoutMs, intervalMs, ct);
     }
 
@@ -1053,7 +1126,13 @@ public sealed class UIAutomationService : IUIAutomationService
                 new WaitEvidence(Matches: (await FindElementAsync(request.Text!, request.Kind, request.Scope,
                     request.WindowTitle, request.IncludeOffscreen, token).ConfigureAwait(false)).Matches),
         };
-        return WaitLoopAsync(request, gather, ct);
+        return WaitLoopAsync(request, gather, ct, ReleaseIds);
+    }
+
+    /// <summary>D-11 R18: drops ids a wait minted and its result does not carry.</summary>
+    private void ReleaseIds(IReadOnlyList<string> ids)
+    {
+        foreach (var id in ids) _cache.Remove(id);
     }
 
     /// <summary>
@@ -1066,8 +1145,29 @@ public sealed class UIAutomationService : IUIAutomationService
     /// <see cref="TimeoutException"/> (C4 outranks D-5's throw, and the detail carries D-5's point).
     /// </summary>
     internal static async Task<WaitForResult> WaitLoopAsync(
-        WaitRequest request, Func<CancellationToken, Task<WaitEvidence>> gather, CancellationToken ct)
+        WaitRequest request, Func<CancellationToken, Task<WaitEvidence>> gather, CancellationToken ct,
+        Action<IReadOnlyList<string>>? release = null)
     {
+        // D-11 R18/R21: an element poll's find mints up to 20 ids and the result carries at most
+        // one, so a long wait must hand the rest back or it pushes the caller's own ids out of the
+        // cache. WHEN matters: an unsatisfied poll's Detail can name one of its ids ("found 'Save'
+        // (el_57) but it is disabled"), so that poll's ids stay until another poll is about to
+        // replace it — the final poll of a timed-out wait is never released (at most 20 ids, and
+        // the reply's id resolves). A satisfied poll releases everything but its answer at once;
+        // a cancelled wait releases what is pending, since no reply will carry it. Snapshot and
+        // window evidence carry no Matches. Known limit: if the poll AFTER the last clean one
+        // throws, Detail still describes the clean poll whose ids were released before it.
+        string[] pending = [];
+        void Flush()
+        {
+            if (release is not null && pending.Length > 0) release(pending);
+            pending = [];
+        }
+        static string[] IdsOf(WaitEvidence evidence, string? keep)
+            => evidence.Matches is { Length: > 0 } matches
+                ? matches.Select(m => m.ElementId).Where(id => id != keep).ToArray()
+                : [];
+
         var name = WaitConditions.NameOf(request.Condition);
         var text = request.Text ?? "";
         var clock = Stopwatch.StartNew();
@@ -1077,27 +1177,40 @@ public sealed class UIAutomationService : IUIAutomationService
         string lastDetail = "";
         Exception? lastFailure = null;
 
-        while (true)
+        try
         {
-            ct.ThrowIfCancellationRequested();
-            attempts++;
-            try
+            while (true)
             {
-                var evidence = await gather(ct).ConfigureAwait(false);
-                var (satisfied, detail, element) = WaitConditions.Evaluate(request.Condition, text, evidence);
-                anyCleanPoll = true;
-                lastDetail = detail;
-                if (satisfied)
-                    return new WaitForResult(true, name, clock.ElapsedMilliseconds, attempts, detail, element);
-            }
-            catch (OperationCanceledException) { throw; }
-            catch (Exception ex) { lastFailure = ex; }   // D-5: a poll that throws is retried
+                ct.ThrowIfCancellationRequested();
+                attempts++;
+                Flush();   // the previous poll's ids: another poll follows, so nothing will name them
+                try
+                {
+                    var evidence = await gather(ct).ConfigureAwait(false);
+                    var (satisfied, detail, element) = WaitConditions.Evaluate(request.Condition, text, evidence);
+                    anyCleanPoll = true;
+                    lastDetail = detail;
+                    pending = IdsOf(evidence, satisfied ? element?.ElementId : null);
+                    if (satisfied)
+                    {
+                        Flush();
+                        return new WaitForResult(true, name, clock.ElapsedMilliseconds, attempts, detail, element);
+                    }
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex) { lastFailure = ex; }   // D-5: a poll that throws is retried
 
-            var remaining = deadline - clock.Elapsed;
-            if (remaining <= TimeSpan.Zero) break;
-            var delay = TimeSpan.FromMilliseconds(Math.Max(10, request.IntervalMs));
-            if (delay > remaining) delay = remaining;
-            await Task.Delay(delay, ct).ConfigureAwait(false);
+                var remaining = deadline - clock.Elapsed;
+                if (remaining <= TimeSpan.Zero) break;
+                var delay = TimeSpan.FromMilliseconds(Math.Max(10, request.IntervalMs));
+                if (delay > remaining) delay = remaining;
+                await Task.Delay(delay, ct).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            Flush();
+            throw;
         }
 
         // C4: a timeout is a result. When we never managed to look, the detail says so (D-5).
@@ -1127,23 +1240,15 @@ public sealed class UIAutomationService : IUIAutomationService
     public Task FocusAsync(string elementId, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        return OnStaAsync<int>(() =>
+        return OnStaAsync(() => Refusing(elementId, "focus", el =>
         {
-            var el = ResolveCached(elementId);
             el.Focus();
             return 0;
-        }, ct);
+        }, acts: true), ct);
     }
 
-    private AutomationElement ResolveCached(string id)
-    {
-        lock (_cacheLock)
-        {
-            if (!_elementCache.TryGetValue(id, out var el))
-                throw new KeyNotFoundException($"Element '{id}' not in cache");
-            return el;
-        }
-    }
+    /// <summary>The element behind an id, or a KeyNotFoundException saying it expired or is unknown (D-11).</summary>
+    private AutomationElement ResolveCached(string id) => _cache.Get(id);
 
     public void Dispose()
     {

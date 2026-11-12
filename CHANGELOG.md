@@ -474,6 +474,24 @@
 
 ### Changed
 
+- **`get_element` answers under the id it was given, and a dead element id says why** (parity D-11
+  — a contract change). `get_element("el_12")` returned the element under a freshly minted id; it
+  now returns `ElementId: "el_12"`, and so does every element-targeted
+  `click`/`type`/`scroll`/`drag`, which resolve through it. The old `Element 'el_N' not in cache`
+  is gone: an id the server issued and no longer holds reads `Element 'el_N' has expired: a newer
+  snapshot replaced it, or it aged out of the element cache.` followed by the calls that take a
+  snapshot too (`wait_for` with a text or focus condition, `screenshot` with `annotate`, `scrape`
+  with source `dom`) and "Take a new snapshot"; one it never issued reads `Unknown element id
+  'el_N': no such id was issued.` `assert_element(state:"exists")` on an expired id is `FAIL:
+  exists — observed element id has expired (take a new snapshot)` (still never an error). The
+  `snapshot`, `wait_for` and `scrape` descriptions now say which calls replace the previous
+  snapshot's ids, and `get_element`'s says the id is echoed.
+- **`scheduled_task create` takes one trigger form, and says so** (parity D-10). The `trigger`
+  description offered `'daily'` and `'onlogon'`, which `DateTime.Parse` could never read, so they
+  failed masked with nothing registered. It now asks for a one-time start as a date and time
+  (`2026-05-06T09:00:00`); anything else is an `ArgumentException` naming `trigger` and the
+  accepted form, thrown before the scheduler is touched (`TaskSchedulerService.ParseTrigger`,
+  `TaskSchedulerTriggerTests`). Recurring triggers are still not built.
 - **`FlashOverlay` paints through the shared `LayeredWindow`** (S-11). The overlay window's
   creation, the DIB + `UpdateLayeredWindow` paint and the top-most, non-activating show moved out
   of `FlashOverlay` into `Services/LayeredWindow.cs`, which the control indicator's two windows
@@ -795,6 +813,49 @@
 
 ### Fixed
 
+- **Refusals the caller could not read now arrive as text** (parity D-10, and the family the review
+  found around it). `ToolErrors.IsCallerFacing` admits six exception types; a refusal raised as any
+  other reached the client as `An error occurred invoking '<tool>'.`. Fixed at each call site:
+  `interact_element` on a pattern the control lacks is an `InvalidOperationException` naming the
+  pattern, the control type and its name (`TogglePattern not supported on Edit 'Query'.`), and
+  `get_table`'s missing GridPattern says the same; a middle-button `drag` is an `ArgumentException`
+  naming `button`. What the target itself throws on `interact_element`, `get_table` and `get_text`
+  (and `IUIAutomationService.FocusAsync`, which no tool calls yet) — FlaUI's exception types and
+  the UIA HRESULTs — is translated by the new `Services/UiTree/UiRefusals.cs` inside
+  `UIAutomationService.Refusing`: a disabled control, an element that is no longer available
+  (naming the id and "take a new snapshot"; was DEF-048), a child item or part gone while its
+  container is alive, an unsupported pattern or property; anything unrecognised stays masked. An
+  acting verb (all six `interact_element` actions, and `FocusAsync`) on a control that reports
+  disabled is refused **before** anything is touched, so the foreground no longer moves on the way
+  to the refusal, and `interact_element` validates the action name and `type`'s value before it
+  looks at the element. `get_state`, a foreground `find_element` and a foreground `snapshot` fall
+  back to the desktop when nothing is in the foreground (`Services/UiTree/UiRoots.cs`) —
+  `FocusedElement()` throws there rather than returning null, so the documented fallback was
+  unreachable. `start_process` and `launch` (`Services/ProcessStartErrors.cs`): a command that does
+  not exist is a `FileNotFoundException` naming the file actually tried, with a quote-it /
+  `args_json` hint when an unquoted command line was split at a space; access denied is an
+  `UnauthorizedAccessException`, any other OS error an `InvalidOperationException`, and a failed
+  packaged activation names the AUMID and the HRESULT in hex. Registry
+  (`Services/RegistryErrors.cs`): access denied is one `UnauthorizedAccessException` naming the
+  hive and key on every operation (`OpenSubKey` raised a masked `SecurityException`), a denied
+  descendant is named by its own path, and a tree delete denied part-way says sub-keys may already
+  be gone; `registry_delete`'s description no longer says the OS error is passed through.
+  `power_action`: an OS refusal is an `InvalidOperationException` with the action and Windows'
+  reason (`PowerService` over the new internal `IPowerNative` / `Win32PowerNative` seam, so
+  `PowerServiceTests` reach the refusal without a power action). A new IL scan in `ToolErrorsTests`
+  fails on any exception the server constructs that is neither caller-facing nor on a site-keyed,
+  reasoned allow-list, and on HRESULT throws outside a reasoned list. Neighbour gaps the review
+  found are logged as parity items D-12 … D-18, not fixed here.
+- **The element-id cache is bounded** (parity D-11). Every `find_element` match, `get_state` node,
+  `get_element` and element-targeted input call added an id that lived until the process exited —
+  on a long-running HTTP host, an unbounded set of live COM references. The new
+  `Services/UiTree/ElementCache.cs` keeps non-snapshot ids in a least-recently-used set of
+  `max(UiTreeOptions.MaxCachedElements, 2 × MaxElements)` entries (`MaxCachedElements` defaults to
+  5 000; no option sets it), while snapshot ids stay exempt and are dropped by the next snapshot as
+  before. `get_element` no longer mints a second id (see *Changed*), and `wait_for`'s element
+  conditions hand back each poll's unused ids — the final poll of a timed-out wait is kept, so an
+  id named in `Detail` resolves. The removed `UIAutomationService.cs` header TODO tracked this
+  since v0.2.0. Tests: `ElementCacheTests`, `WaitLoopReleaseTests`, `UIAutomationServiceTests`.
 - **The overlay window class's procedure lives as long as the class** (found while extracting
   `LayeredWindow` for S-11). `FlashOverlay` registered its process-lifetime window class with a
   per-instance window-procedure delegate; a second instance reused the class, so once the first

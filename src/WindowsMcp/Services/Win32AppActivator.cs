@@ -19,7 +19,9 @@ internal sealed class Win32AppActivator : IAppActivator
         try
         {
             int hr = manager.ActivateApplication(aumid, null, ACTIVATEOPTIONS.None, out uint pid);
-            if (hr < 0) Marshal.ThrowExceptionForHR(hr);
+            // D-10 R12: built from the HRESULT itself. Marshal.ThrowExceptionForHR maps it to an
+            // arbitrary type — a masked COMException, or an ArgumentException naming nothing.
+            if (hr < 0) throw ProcessStartErrors.ActivationFailed(aumid, hr);
             return (int)pid;
         }
         finally
@@ -30,8 +32,7 @@ internal sealed class Win32AppActivator : IAppActivator
 
     public int StartShortcutOrPath(string target)
     {
-        using var process = Process.Start(new ProcessStartInfo(target) { UseShellExecute = true })
-            ?? throw new InvalidOperationException($"Failed to start '{target}'");
+        using var process = ProcessStartErrors.Start(new ProcessStartInfo(target) { UseShellExecute = true }, target);
         return process.Id;
     }
 

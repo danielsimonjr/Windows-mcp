@@ -98,14 +98,16 @@ public async Task<string> ToolName(/* parameters */)
 
 2. UIAutomationService.GetStateAsync()   [on the STA worker thread]
    ├─► Foreground root: GetForegroundWindow() → FromHandle, falling back to
-   │   the focused element, then the desktop
+   │   the focused element, then the desktop (UiRoots.FirstAvailable: a rung
+   │   that throws — FocusedElement() with nothing in front — moves on)
    ├─► BuildTree(root, depth: 3, budget) — recursive, depth-limited
    └─► ElementBudget.TryTake() per node (UiTreeOptions.MaxElements,
        from --max-tree-elements, default 500); a refused child ends its
        parent's child list and stops the walk
 
 3. Per element → ElementInfo:
-   { ElementId "el_N" (cached for get_element/interact_element), Name,
+   { ElementId "el_N" (in the element cache's bounded LRU — 5 000 by default,
+     least recently used out first — for get_element/interact_element), Name,
      ControlType, IsEnabled, IsOffscreen, Bounds, Value, IsChecked,
      IsSelected, Scroll (null here — snapshot populates it) }
 
@@ -237,7 +239,7 @@ Input:  element_id="el_12", button="right", clicks=1
 Processing:
   ParseButton("right") → MouseButton.Right
   ResolveTargetAsync(null, null, "el_12", allowCursor: false):
-    ├─► IUIAutomationService.GetElementAsync("el_12")  // the snapshot/find_element id cache
+    ├─► IUIAutomationService.GetElementAsync("el_12")  // the element cache; answers under "el_12" itself
     └─► ElementTarget.CentreOf(info) → (800, 400)      // Bounds.X + Width/2, Bounds.Y + Height/2
   InputService.ClickAsync(800, 400, MouseButton.Right, 1):
     ├─► SetCursorPos(800, 400) + GetCursorPos   // physical virtual-desktop pixels; throws if clamped
@@ -840,9 +842,10 @@ UIAutomationService.AssertElementAsync(element_id, state, expected)
   Validate: known state; `expected` only — and always — with "value"
         │
         ▼
-  Resolve element by ID from internal cache
-  ├─ unknown id + "exists" → FAIL "unknown element id"
-  └─ unknown id + other    → KeyNotFoundException
+  Resolve element by ID from the element cache (D-11)
+  ├─ dead id + "exists" → FAIL "element id has expired (take a new snapshot)"
+  │                        or FAIL "unknown element id" (never issued)
+  └─ dead id + other    → KeyNotFoundException ("… has expired …" / "Unknown element id …")
         │
         ▼
   Liveness probe: ProcessId <= 0, or UIA_E_ELEMENTNOTAVAILABLE /
@@ -902,9 +905,22 @@ overload.
 ### UI Automation Errors
 
 ```
-UIAutomationService methods
-  catch (Exception ex)
-  └─► Return null or empty result (callers check for null)
+find_element / snapshot / get_state walks
+  └─► a property read or element that fails mid-walk is skipped; a window whose walk throws
+      is logged and skipped
+
+Element-targeted calls (get_text, get_table, interact_element; FocusAsync) — D-10 / D-11
+  ResolveCached(id) misses  → KeyNotFoundException: "Element 'el_N' has expired: … take a new
+                              snapshot" (issued, since dropped) | "Unknown element id …"
+  acting verb (interact_element, FocusAsync) on a control that reports disabled
+                            → InvalidOperationException before any pattern call or focus
+  the target throws         → Refusing():
+    timeout / cancellation / ArgumentException → rethrown as-is (no further read of a hung target)
+    else liveness probe (one ProcessId read, UiRefusals.ProbeSaysGone)
+      gone          → InvalidOperationException "Element 'el_N' is no longer available: …"
+      alive         → UiRefusals.Translate: disabled | an item/part gone | not supported
+                      → InvalidOperationException naming the control
+      unrecognised  → rethrown unchanged (stays masked)
   
 WaitFor — timeout path (B-6):
   elapsed > timeout_ms → WaitForResult(Satisfied=false, …, Detail=<the last poll's detail>)
@@ -937,6 +953,12 @@ UnauthorizedAccessException, TimeoutException.
 The last four joined in C-1's round 4 — a refused parameter combination, the PID-reuse guard,
 the window matcher's "Open windows: …", a stale element id, a missing registry key, an unknown
 app, and every file tool's own not-found / access-denied answer with the path in it.
+D-10: what a library or the OS throws for a refusal is translated at the call site into one of
+these — UiRefusals (pattern, disabled, element gone), ProcessStartErrors (missing executable,
+access denied, activation HRESULT), RegistryErrors (access denied naming hive and key),
+PowerService (the OS refused the action), TaskSchedulerService.ParseTrigger (not a date-time).
+ToolErrorsTests scans the server's IL so a new non-caller-facing construction fails the suite
+unless it is on the reasoned, site-keyed MaskedOnPurpose list.
 ```
 
 ---

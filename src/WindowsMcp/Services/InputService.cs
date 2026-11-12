@@ -67,9 +67,9 @@ public sealed class InputService : IInputService
 
         if (actual.X == x && actual.Y == y) return;
 
-        int left   = PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_XVIRTUALSCREEN);
-        int top    = PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_YVIRTUALSCREEN);
-        int width  = PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_CXVIRTUALSCREEN);
+        int left = PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_XVIRTUALSCREEN);
+        int top = PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_YVIRTUALSCREEN);
+        int width = PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_CXVIRTUALSCREEN);
         int height = PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_CYVIRTUALSCREEN);
         throw new ArgumentOutOfRangeException(nameof(x),
             $"({x},{y}) is not on any monitor: the cursor landed at ({actual.X},{actual.Y}). The virtual screen spans " +
@@ -86,13 +86,20 @@ public sealed class InputService : IInputService
             ct.ThrowIfCancellationRequested();
             switch (button)
             {
-                case MouseButton.Left:   _sim.Mouse.LeftButtonClick();   break;
-                case MouseButton.Right:  _sim.Mouse.RightButtonClick();  break;
+                case MouseButton.Left: _sim.Mouse.LeftButtonClick(); break;
+                case MouseButton.Right: _sim.Mouse.RightButtonClick(); break;
                 case MouseButton.Middle: _sim.Mouse.MiddleButtonClick(); break;
             }
         }
         return Task.FromResult(new ClickResult(x, y, button, clicks));
     }
+
+    /// <summary>
+    /// D-10: a bad argument value, so an <see cref="ArgumentException"/> the caller gets to read —
+    /// the earlier <see cref="NotSupportedException"/> was masked by the call-tool filter.
+    /// </summary>
+    private static ArgumentException MiddleDragRefused(string paramName)
+        => new("Middle-button drag is not supported (the input library has no middle-button press and release); use left or right.", paramName);
 
     public Task<DragResult> DragAsync(int fromX, int fromY, int toX, int toY, MouseButton button = MouseButton.Left, CancellationToken ct = default)
     {
@@ -100,14 +107,13 @@ public sealed class InputService : IInputService
 
         // H.InputSimulator exposes only Left/Right ButtonDown/Up; no MiddleButtonDown/Up.
         // Reject middle-button drag rather than silently degrading to a left-button drag.
-        if (button == MouseButton.Middle)
-            throw new NotSupportedException("Middle-button drag is not supported by H.InputSimulator");
+        if (button == MouseButton.Middle) throw MiddleDragRefused(nameof(button));
 
         MoveCursor(fromX, fromY);
 
         switch (button)
         {
-            case MouseButton.Left:  _sim.Mouse.LeftButtonDown();  break;
+            case MouseButton.Left: _sim.Mouse.LeftButtonDown(); break;
             case MouseButton.Right: _sim.Mouse.RightButtonDown(); break;
         }
 
@@ -115,7 +121,7 @@ public sealed class InputService : IInputService
 
         switch (button)
         {
-            case MouseButton.Left:  _sim.Mouse.LeftButtonUp();  break;
+            case MouseButton.Left: _sim.Mouse.LeftButtonUp(); break;
             case MouseButton.Right: _sim.Mouse.RightButtonUp(); break;
         }
 
@@ -130,8 +136,7 @@ public sealed class InputService : IInputService
     public async Task<DragResult> DragAsync(int fromX, int fromY, int toX, int toY, MouseButton button, int durationMs, int steps, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        if (button == MouseButton.Middle)
-            throw new NotSupportedException("Middle-button drag is not supported by H.InputSimulator");
+        if (button == MouseButton.Middle) throw MiddleDragRefused(nameof(button));
         if (durationMs < 0) throw new ArgumentOutOfRangeException(nameof(durationMs), durationMs, "durationMs cannot be negative");
         if (steps < 1) throw new ArgumentOutOfRangeException(nameof(steps), steps, "steps must be at least 1");
 
@@ -302,10 +307,10 @@ public sealed class InputService : IInputService
         }
         switch (dir)
         {
-            case "up":    _sim.Mouse.VerticalScroll(amount);    break;
-            case "down":  _sim.Mouse.VerticalScroll(-amount);   break;
-            case "left":  _sim.Mouse.HorizontalScroll(-amount); break;
-            case "right": _sim.Mouse.HorizontalScroll(amount);  break;
+            case "up": _sim.Mouse.VerticalScroll(amount); break;
+            case "down": _sim.Mouse.VerticalScroll(-amount); break;
+            case "left": _sim.Mouse.HorizontalScroll(-amount); break;
+            case "right": _sim.Mouse.HorizontalScroll(amount); break;
         }
     }
 

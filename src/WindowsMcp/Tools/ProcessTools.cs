@@ -250,7 +250,7 @@ public sealed class ProcessTools
         [Description("Action: list, get, run, create, delete")] string action,
         [Description("Task name (required for get/run/create/delete)")] string? name = null,
         [Description("Command for create action")] string? command = null,
-        [Description("Trigger for create action (e.g. 'daily', 'onlogon')")] string? trigger = null,
+        [Description("For create: the one-time start as a date and time, e.g. '2026-05-06T09:00:00'. Recurring triggers are not supported")] string? trigger = null,
         [Description("Must be true to confirm destructive delete action")] bool confirm = false,
         CancellationToken ct = default)
     {

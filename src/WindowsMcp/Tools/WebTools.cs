@@ -52,7 +52,8 @@ public sealed class WebTools
         "rejected) and converts the HTML to markdown; source:'dom' reads the page already open in a " +
         "Chromium browser (Edge, Chrome, Brave, Opera, Vivaldi; not Firefox) — the window given by " +
         "'window', else the frontmost such window — with a scroll hint saying whether there is more " +
-        "above or below. Returns JSON {Source, Url, Title, Chars, Truncated, Content, Summarized, " +
+        "above or below. A dom read walks the browser as a snapshot does, so it replaces the previous " +
+        "snapshot's element ids (el_N): take a new snapshot before acting on one. Returns JSON {Source, Url, Title, Chars, Truncated, Content, Summarized, " +
         "Model, Note}: Chars is the size before max_chars cut it, and Truncated says the text was cut " +
         "by max_chars or by the element budget of a dom walk (Note then names --max-tree-elements). " +
         "summarize:true asks YOUR client's model to condense the page (and to answer 'query' from it, " +

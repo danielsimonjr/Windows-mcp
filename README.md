@@ -405,9 +405,12 @@ across volumes, and `delete` of one removes the link and leaves its target alone
 
 A refusal reaches you as its own sentence. The server surfaces the message of a deliberate answer
 — a refused parameter combination, a guard abort, a key or window that is not there, and the file
-system's own "not found" / "access denied" / "in use" / "path too long" with the path in it —
+system's own "not found" / "access denied" / "in use" / "path too long" with the path in it, and
+what the target itself refused: a UI pattern a control lacks, a disabled control (refused before
+anything is touched), an element whose window closed, a command that does not exist, a power
+action Windows declined, a registry key the server may not open (named with its hive) —
 instead of the SDK's generic `An error occurred invoking '<tool>'.`, capped at 2 000 characters.
-Unexpected faults (a null reference, a COM or Win32 failure) stay masked.
+Unexpected faults (a null reference, an unrecognised COM or Win32 failure) stay masked.
 
 `env(get|list)` redacts values for variables whose name contains
 `KEY/TOKEN/SECRET/PASSWORD/AUTH/CREDENTIAL/PRIVATE/PAT` (case-insensitive).

@@ -82,7 +82,7 @@ The MCP SDK (`ModelContextProtocol.Server`) handles all protocol concerns:
 - **Tool Discovery**: `WithToolsFromAssembly()` — discovers all `[McpServerTool]` methods, registering them with their parameter schemas automatically
 - **Server Info**: `ServerInfo = new() { Name = "Windows-mcp", Version = Program.ServerVersion }` — the version comes from `<Version>` in `Directory.Build.props`
 - **Shared wiring**: `WindowsMcpHost.AddWindowsMcp(options)` holds the service registrations, server identity, caller-facing error filter and tool discovery, so both transports are configured identically; only the transport call differs.
-- **Caller-facing errors**: the call-tool filter returns `ToolErrors.MessageFor(ex)` — the exception's own message, capped at 2 000 characters — for `ArgumentException`, `InvalidOperationException`, `KeyNotFoundException`, `IOException`, `UnauthorizedAccessException` and `TimeoutException` (`ToolErrors.IsCallerFacing`), the deliberate answers a caller must be able to read. Everything else keeps the SDK's `"An error occurred invoking '<tool>'."` masking. See `DATAFLOW.md` → "Which exception the caller sees".
+- **Caller-facing errors**: the call-tool filter returns `ToolErrors.MessageFor(ex)` — the exception's own message, capped at 2 000 characters — for `ArgumentException`, `InvalidOperationException`, `KeyNotFoundException`, `IOException`, `UnauthorizedAccessException` and `TimeoutException` (`ToolErrors.IsCallerFacing`), the deliberate answers a caller must be able to read. Everything else keeps the SDK's `"An error occurred invoking '<tool>'."` masking, so a refusal a library or the OS raises in another type (FlaUI's exceptions, `Win32Exception`, `SecurityException`, an HRESULT) is translated where it is called (D-10: `UiRefusals`, `ProcessStartErrors`, `RegistryErrors`, `PowerService`), and `ToolErrorsTests` scans the server's IL for any construction that is neither caller-facing nor on its site-keyed `MaskedOnPurpose` list. See `DATAFLOW.md` → "Which exception the caller sees".
 - **Control indicator (S-11)**: the same filter runs a *driving* tool — one of the 13 names in `Hosting/DrivingTools.Names` (`click`, `type`, `shortcut`, `focus`, `switch_to_window`, …) — between `IControlIndicator.BeginAction()` and `EndAction()`, and appends a pending takeover to the next result of **any** tool as one extra, last text block (`WindowsMcpHost.TakeoverNote`). It never refuses, delays or cancels a call, and a fault in the indicator is swallowed rather than failing the tool. A cancelled call, or a fault the SDK masks, leaves the takeover pending for the next result. See `DATAFLOW.md` → "Control Indicator Flow".
 
 **Critical startup requirements** (handled in `Program.cs` before host build):
@@ -335,7 +335,10 @@ Windows-mcp.slnx
 │   │   │   ├── UiTree/                    (snapshot core: UiNode, UiClassifier, ElementBudget,
 │   │   │   │                               UiTraverser, SnapshotRenderer, DomCorrection,
 │   │   │   │                               ElementTarget — B-4's element_id → point;
-│   │   │   │                               WaitConditions — B-6's pure condition evaluator)
+│   │   │   │                               WaitConditions — B-6's pure condition evaluator;
+│   │   │   │                               ElementCache — D-11's bounded element-id cache;
+│   │   │   │                               UiRefusals, UiRoots — D-10's element refusals
+│   │   │   │                               and foreground-root ladder)
 │   │   │   ├── WindowService.cs           (+ FuzzyMatch, WindowMatcher, ForegroundLadder and
 │   │   │   │                               Win32ForegroundNative — B-10's matcher and ladder;
 │   │   │   │                               WindowGeometry and Win32WindowGeometryNative —
@@ -346,12 +349,17 @@ Windows-mcp.slnx
 │   │   │   ├── ProcessService.cs          (+ ArgvJson — B-11's args_json parser;
 │   │   │   │                               CpuSample, IProcessWindowNative and
 │   │   │   │                               Win32ProcessWindowNative — C-3's CPU sample,
-│   │   │   │                               sort/limit and graceful-kill window seam)
+│   │   │   │                               sort/limit and graceful-kill window seam;
+│   │   │   │                               ProcessStartErrors — D-10's start-failure
+│   │   │   │                               translation, shared with launch)
 │   │   │   ├── FileSystemService.cs       (+ LineWindow — C-1's pure file_read window;
 │   │   │   │                               PathCanonical, IFinalPathNative and
 │   │   │   │                               Win32FinalPathNative — C-1 round 4's alias-proof
 │   │   │   │                               containment check)
-│   │   │   ├── RegistryService.cs         (+ RegistryGuard — C-2's pure root denylist)
+│   │   │   ├── RegistryService.cs         (+ RegistryGuard — C-2's pure root denylist;
+│   │   │   │                               RegistryErrors — D-10's access-denied shape)
+│   │   │   ├── PowerService.cs            (+ IPowerNative and Win32PowerNative — D-10's
+│   │   │   │                               seam for the OS refusing a power action)
 │   │   │   ├── NotificationService.cs     (+ IToastSink and WinRtToastSink — C-4's
 │   │   │   │                               in-process WinRT toast seam)
 │   │   │   ├── WebService.cs              (+ DomPage, ScrapeSummary, TextCap — C-5's pure
