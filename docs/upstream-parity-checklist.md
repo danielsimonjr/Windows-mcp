@@ -6,18 +6,19 @@
 **Ours:** `main` @ `8cb40b6` + the phase-2/3/4/5 branches, 69 tools, plugin `0.7.3`, `CHANGELOG.md
 [Unreleased]` carries the section-A phase-1 work (A-7, A-8, A-9, A-11, A-13), phase 2's A-1,
 phase 3's A-2/A-3/A-4, phase 4's A-6 and phase 5's A-14, A-12 (phase 1), A-10 and A-5 (phase 1),
-then all of section B and all of section C (C-7, C-4, C-2, C-3, C-1, C-6, C-5), and D-10/D-11.
+then all of section B and all of section C (C-7, C-4, C-2, C-3, C-1, C-6, C-5), D-10/D-11, S-11
+and E-1.
 SDK `ModelContextProtocol` 2.2.0.
 **Status:** Living document — check items off as they ship.
 
-This is the working list of everything upstream can do that this server cannot (plus eighteen
+This is the working list of everything upstream can do that this server cannot (plus twenty-two
 defects: D-1…D-4 from the original comparison, D-5…D-9 added later under rule 4 and D-10/D-11
-logged 2026-11-10 — **all eleven are now fixed** — and D-12…D-18, logged 2026-11-11 by the
-D-10/D-11 review and still open; section A's phase 1 — A-7, A-9, A-8, A-11 and A-13 — is done, phase 2 shipped A-1,
+logged 2026-11-10 — **all eleven are now fixed** — then D-12…D-18, logged 2026-11-11 by the
+D-10/D-11 review, and D-19…D-22, logged 2026-11-12 during E-1, all still open; section A's phase 1 — A-7, A-9, A-8, A-11 and A-13 — is done, phase 2 shipped A-1,
 phase 3 shipped A-2 with A-3 and A-4 inside it, phase 4 shipped A-6, and phase 5 shipped A-14,
 A-12 phase 1, A-10 and A-5 phase 1 — so every section-A row is ticked, with only A-5's Firefox
 phase left open and A-12's phase 2 deliberately not planned; section B is ticked too, and
-C-5/C-6 close section C — section S, D-12…D-18 and section E are the work that is left; section E
+C-5/C-6 close section C — section S, D-12…D-22 and section E are the work that is left; section E
 is not upstream parity but an agent-efficiency backlog from a review of this server's own tools).
 Each item carries enough context to write a design note and an implementation plan without re-reading
 upstream from scratch: what upstream does and where, what we do today and where, an
@@ -114,7 +115,7 @@ function names are the stable anchor.
 | S-8 | Unauthenticated `/health` | P2 | S | — | ☐ |
 | S-9 | Claude Desktop Extension (`.mcpb`) + registry `server.json` | P3 | M | — | ☐ |
 | S-10 | Per-tool black-box tester skill | P3 | S | — | ☐ |
-| S-11 | AI-control indicator + takeover hotkey (indicator only — no gating) | P2 | M | A-14 · [S-11](design/S-11-control-indicator.md) | ☑ on its branch, not yet merged |
+| S-11 | AI-control indicator + takeover hotkey (indicator only — no gating) | P2 | M | A-14 · [S-11](design/S-11-control-indicator.md) | ☑ |
 | D-10 | `interact_element`'s "pattern not supported" refusal is masked from the caller | P1 | S | — | ☑ |
 | D-11 | Element cache grows without bound outside `snapshot` | P1 | S | — | ☑ |
 | D-12 | Recursive `registry_delete` is not atomic: a sub-key that denies delete leaves the tree half gone | P2 | S–M | D-10 | ☐ |
@@ -124,7 +125,11 @@ function names are the stable anchor.
 | D-16 | A click centre that lands off every monitor is refused naming `x`, a parameter the caller never passed | P3 | S | — | ☐ |
 | D-17 | `launch` / `start_process` report a ShellExecute hand-off to a running app as a failure | P2 | S | — | ☐ |
 | D-18 | `wait_for` leftovers: a detail id released when the final poll throws; ids of a poll in flight at cancel | P3 | S | D-11 | ☐ |
-| E-1 | Server instructions in the MCP handshake | P1 | S | — | ☐ |
+| D-19 | `snapshot`'s truncation note says `window=<title>`, which `snapshot` refuses without `scope=window` | P2 | S | — | ☐ |
+| D-20 | `find_element` stops at 20 matches and does not say it stopped | P2 | S | — | ☐ |
+| D-21 | `wait_for` spins with under 1 ms of budget left: `Task.Delay` of a sub-millisecond span returns at once | P3 | S | — | ☐ |
+| D-22 | `archive` zip/unzip silently overwrite an existing destination; no `overwrite`, no `confirm` | P2 | S | — | ☐ |
+| E-1 | Server instructions in the MCP handshake | P1 | S | — | ☑ |
 | E-2 | `interact_element`: expand, collapse, set_value, scroll_into_view | P1 | S | D-10 | ☐ |
 | E-3 | `click` modifiers; `key` repeat and hold | P2 | S | — | ☐ |
 | E-4 | `find_element` filters: automation id, control type, class, within, paging | P2 | M | — | ☐ |
@@ -137,10 +142,10 @@ function names are the stable anchor.
 | E-11 | Stable element ids and a snapshot diff | P3 | L | E-5, D-11 | ☐ |
 
 **Suggested order.** **Defects D-1 … D-11 are done** (D-12 … D-18, logged 2026-11-11 by the
-D-10/D-11 review, are open), and **so are sections A, B and C** (A-5's Firefox phase and
+D-10/D-11 review, and D-19 … D-22, logged 2026-11-12 during E-1, are open), and **so are sections
+A, B and C** (A-5's Firefox phase and
 D-2's `interact_element(type) clear` are the open sub-items; A-12's phase 2 is not planned). What
-is left of the parity work is section S: S-11 (the control indicator) is done on
-`feature/control-indicator`; the quick wins S-8 and S-1 can be interleaved anywhere; S-4 last.
+is left of the parity work is section S: S-11 (the control indicator) is done (PR #32); the quick wins S-8 and S-1 can be interleaved anywhere; S-4 last.
 The section-A sequencing, cross-item decisions (coordinate space, defaults, tool count, element
 ids, env vars) and per-item test seeds are in [`docs/design/A-roadmap.md`](design/A-roadmap.md).
 The section-B plan (four phases, the element-target resolver, window matcher, typing planner and
@@ -151,7 +156,8 @@ opt-in sampling and the annotation table, per-item test seeds) is in
 
 **Section E (added 2026-11-10) is not upstream parity.** It comes from a review of this server's
 own tool surface for how many round trips and tokens an AI client spends driving it, and the same
-review logged D-10 and D-11 (both done 2026-11-11, so E-2 and E-5 are unblocked). Order: E-1,
+review logged D-10 and D-11 (both done 2026-11-11, so E-2 and E-5 are unblocked). E-1 is done
+(2026-11-12). Order for the rest:
 E-2, E-3, E-4, E-5, E-6, E-7, E-8, E-9, E-10. E-11 is last and conditional: measure the snapshot
 cost after E-5 before committing to it. `todo.md` still records every UI-automation tool as never
 verified live — that sweep outranks any E item that builds on those tools.
@@ -681,6 +687,119 @@ have the find path report the ids it mints through a caller-supplied sink so the
 them when the abandoned work finishes.
 
 **Done when.** No `el_N` named in a `wait_for` reply is ever expired on arrival.
+
+### D-19 — `snapshot`'s truncation note recommends a call `snapshot` refuses  `P2 · S`
+- [ ] Not started
+
+**Found while pinning the E-1 instructions (2026-11-12), read from the source.**
+
+**Ours today.** A text-format `snapshot` whose walk ran out of budget ends with
+`ElementBudget.NoteFor` (`Services/UiTree/ElementBudget.cs`), printed by `SnapshotRenderer`:
+`Truncated at N elements. Narrow the view (scope=foreground, or window=<title>) or raise
+max_elements.` But `UIAutomationTools.Snapshot` refuses `window` unless `scope` is `window`
+(`"window is only used with scope=window."`), and the default scope is `desktop` — so a client
+that follows the note literally and adds `window=<title>` gets an `ArgumentException` instead of a
+narrower walk.
+
+**Sketch.** Make the note name the call that works: `scope=window with window=<title>`. Keep the
+leading `Truncated` word (the E-1 instructions and `ServerInstructionsTests` key on it).
+
+**Touches.** `Services/UiTree/ElementBudget.cs`, `tests/.../Services/UiTree/ElementBudgetTests.cs`,
+`tests/.../Services/UiTree/SnapshotFixtures.cs` (which repeats the note verbatim),
+`docs/testing/e2e-test-plan.md` (SNAPSHOT-02 quotes the trailer).
+
+**Tests.** Every parameter assignment the note names is accepted by `snapshot` as written — parse
+the note's `key=value` pairs and call the tool with them (scope=foreground alone; scope=window
+with a window title) and expect no refusal; the note still starts with `Truncated`.
+
+**Done when.** Doing exactly what the truncation note says never produces a refusal.
+
+### D-20 — `find_element` stops at 20 matches and does not say so  `P2 · S`
+- [ ] Not started
+
+**Found while pinning the E-1 instructions (2026-11-12), read from the source.**
+
+**Ours today.** `UIAutomationService.FindElementAsync` stops collecting at `MaxMatches = 20`
+(after filtering, D-7), and `FindElementResult` is `(ElementInfo[] Matches)` — no `Truncated`
+flag, no total. Twenty matches and "the first twenty of many" look identical, so a client cannot
+apply the rule every other capped result follows (and the E-1 instructions state): *Truncated
+means there is more, narrow before concluding something is absent*. The tool's `[Description]`
+says "Returns at most 20 matches", which is the only signal. `wait_for`'s element conditions share
+the find path and the cap.
+
+**Sketch.** Collect up to 21 and report `Truncated: true` when the 21st exists, returning 20 —
+the cheapest honest signal; the walk already stops early, so the extra cost is one element. E-4's
+`max_results` / `offset` / total-matched is the full fix and builds on this; this item is only the
+flag, not paging.
+
+**Touches.** `Abstractions/Models/UIAutomationDtos.cs` (`FindElementResult` gains `Truncated`),
+`Services/UIAutomationService.cs` (`FindElementAsync`, `CollectFrom`), `Tools/UIAutomationTools.cs`
+(the description), `tests/.../Services/UIAutomationServiceTests.cs`,
+`tests/.../Tools/UIAutomationToolsTests.cs`.
+
+**Tests.** Exactly 20 matching elements → 20 rows, `Truncated:false`; 21 → 20 rows,
+`Truncated:true`; the extra element is never cached (no id minted for the 21st, so D-11's cache
+does not grow).
+
+**Done when.** A `find_element` that dropped matches says so in its result.
+
+### D-21 — `wait_for` spins when less than 1 ms of budget is left  `P3 · S`
+- [ ] Not started
+
+**Found while running the E-1 suite (2026-11-12): `Wait_loop_floors_a_zero_interval_at_ten_milliseconds`
+failed once with 3 444 attempts in 150 ms.**
+
+**Ours today.** `UIAutomationService.WaitLoopAsync` (the `wait_for` loop) and `PollAsync` (the
+older `WaitForAsync(string, …)` member of `IUIAutomationService`, which no tool calls today) floor
+the interval at 10 ms and then clamp it to the time left: `if (delay > remaining) delay =
+remaining; await Task.Delay(delay, ct)`. `Task.Delay(TimeSpan)` truncates to whole milliseconds,
+so with under 1 ms remaining it completes at once and the loop polls again with no sleep — over
+and over until the deadline passes. With a cheap poll that is a busy spin (thousands of polls,
+each minting ids on a real desktop); `Attempts` balloons and the 10 ms floor the remarks promise is
+not honoured at the tail. `LaunchWait.ForWindowAsync` is not affected: it works in integer
+milliseconds and stops at `remaining <= 0`.
+
+**Sketch.** Treat a remaining budget under 1 ms as expired (break), or round the clamped delay up
+to 1 ms; either keeps the loop at no more than one poll per floor interval plus one final poll.
+
+**Touches.** `Services/UIAutomationService.cs` (`WaitLoopAsync`, `PollAsync`),
+`tests/.../Services/WaitForServiceTests.cs`.
+
+**Tests.** Drive the loop with a fake clock or a poll that burns the budget down to a fraction of a
+millisecond and assert it does not poll again more than once; the existing
+`Wait_loop_floors_a_zero_interval_at_ten_milliseconds` passes deterministically under load.
+
+**Done when.** `Attempts` for a `timeout_ms` T at `interval_ms:0` is never more than T / 10 + 2.
+
+### D-22 — `archive` zip/unzip overwrite an existing destination without asking  `P2 · S`
+- [ ] Not started
+
+**Found while pinning the E-1 instructions (2026-11-12), read from the source.**
+
+**Ours today.** `archive` takes `action`, `src` and `dst` only — no `confirm`, no `overwrite` —
+and is annotated `Destructive`. `FileSystemService.ZipAsync` builds beside the target and then
+`File.Move(tmp, dstZip, overwrite: true)`, replacing any existing archive at `dst`;
+`UnzipAsync` calls `ZipFile.ExtractToDirectory(srcZip, dstDir, overwriteFiles: true)`, replacing
+every file in `dst` that the archive also contains. `file_manage` copy/move refuse an existing
+destination unless `overwrite:true` (C-1's safer default); `archive` never got that rule. The E-1
+instructions list `archive` among the changes that never ask.
+
+**Sketch.** Add `overwrite` (default false) to `archive`: `zip` refuses an existing `dst` file and
+`unzip` refuses when any entry would land on an existing file, each naming the path and
+`overwrite`, before anything is written — the same contract as `file_manage`. Then drop `archive`
+from the instructions' never-ask list (`ServerInstructionsTests` will demand it) and from
+`skills/windows/SKILL.md` and README "Safety rails".
+
+**Touches.** `Tools/FileTools.cs` (`Archive`), `Abstractions/IFileSystemService.cs`,
+`Services/FileSystemService.cs` (`ZipAsync`, `UnzipAsync`), `Hosting/ServerInstructions.cs`,
+`tests/.../Tools/FileToolsTests.cs`, `tests/.../Services/FileSystemServiceTests.cs`,
+`tests/.../Hosting/ServerInstructionsTests.cs`.
+
+**Tests.** Zip onto an existing archive and unzip over an existing file are each refused with the
+target unchanged; both succeed with `overwrite:true`; unzip into an empty directory needs no flag;
+a zip-slip entry is still refused.
+
+**Done when.** No `archive` call replaces an existing file the caller did not opt into replacing.
 
 ---
 
@@ -1486,7 +1605,7 @@ cleanup, VM/Sandbox recommendation for destructive tools.
 gates; wire into the plugin manifest.
 
 ### S-11 — AI-control indicator and takeover hotkey  `P2 · M`
-- [x] Done 2026-10-21 on branch `feature/control-indicator`, not yet merged — [design note](design/S-11-control-indicator.md); in `CHANGELOG.md [Unreleased]`, ships with the next release
+- [x] Done 2026-10-21, merged in PR #32 — [design note](design/S-11-control-indicator.md); in `CHANGELOG.md [Unreleased]`, ships with the next release
 
 **Upstream (0.8.8, PR #445; policies and opt-out added after it, PRs #458/#460/#466).** A
 desktop-control layer:
@@ -1528,7 +1647,7 @@ count (69 → 71), which moves the counts in `README.md`, `docs/architecture/*`,
 `skills/windows/SKILL.md`, `ToolInventoryTests` and C-7's annotation table.
 
 ### E-1 — Server instructions in the MCP handshake  `P1 · S`
-- [ ] Not started
+- [x] Done 2026-11-12 — in `CHANGELOG.md [Unreleased]`, ships with the next release
 
 **Ours today.** `AddMcpServer` in `WindowsMcpHost.AddWindowsMcp` sets `ServerInfo` only. The
 guidance on how to drive the server (start with `snapshot`, prefer `el_N` ids, re-snapshot after
@@ -1550,6 +1669,26 @@ length ceiling.
 
 **Done when.** A client that has never seen the skill is told the snapshot → act → confirm loop at
 connect time.
+
+**As landed:** the option is `McpServerOptions.ServerInstructions`, set to
+`Hosting/ServerInstructions.Text` in `WindowsMcpHost.AddWindowsMcp`, so stdio and HTTP send the
+same `instructions` in the `initialize` result (`HttpTransportTests` reads it through the SDK
+client and from the raw JSON-RPC body; `StreamTransportTests` over the stdio wiring). The text is
+16 lines, not 30: 1 980 characters of printable ASCII with `\n` breaks against a 2 000-character
+ceiling — **twenty characters of headroom**, so any addition is a trade. It is a set of claims pinned
+by `ServerInstructionsTests` rather than prose: every back-ticked word is a discovered tool; every
+parameter named is in that tool's schema; the never-ask list (`powershell`, `archive`,
+`file_manage` with overwrite, `scheduled_task` create or run, `service` start, `job` cancel,
+`window` close, `http_request`) is exactly every `Destructive` tool with no `confirm` parameter
+plus the ungated actions of gated tools, and each item is shown to run without `confirm`; the
+takeover sentence matches the real note fragment by fragment; the calls named as retiring
+snapshot ids are the ones that do (`WaitForServiceTests`, `WebToolsTests`); the quoted
+`"An error occurred invoking ..."` is what an unexpected fault reads as over the production
+wiring. Changing a tool's parameters, its confirm gate or what evicts snapshot ids therefore means
+changing the sentence — the suite turns red until it is. `ServerInfoTests` was not touched.
+Neighbour gaps found while pinning the text are D-19 … D-22; the same review corrected
+`skills/windows/SKILL.md`'s "Confirm before destructive tools" rail, which claimed every listed
+tool was gated.
 
 ### E-2 — `interact_element`: expand, collapse, set_value, scroll_into_view  `P1 · S`
 - [ ] Not started

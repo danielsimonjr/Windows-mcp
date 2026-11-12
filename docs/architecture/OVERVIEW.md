@@ -27,6 +27,7 @@ The primary goal of Windows-MCP is to provide AI agents with the ability to:
 | **DPI-Aware** | Per-Monitor DPI Awareness V2 enabled at startup for correct multi-monitor coordinate handling |
 | **UTF-8 Stdio** | Output encoding forced to UTF-8 before host starts — prevents buffering bugs on Windows |
 | **Dual Transport** | stdio (default) or Streamable HTTP/HTTPS on a TCP port, gated by a bearer API key — opt-in via `--transport http` |
+| **Server Instructions** | The `initialize` result carries a sub-2 000-character playbook (`Hosting/ServerInstructions.cs`) on both transports — the snapshot → act → confirm loop and the safety rails — so a client without the plugin skill still gets them |
 | **Visible Control** | While a tool drives the mouse or keyboard, a person at the machine sees a ring around the pointer and a banner naming the takeover hotkey (default Ctrl+Alt+Shift+Backspace); pressing it hides them and the agent's next result says so. Never in a capture, never refuses or blocks anything; `--control-indicator off` turns it off |
 
 ## Platform Requirements

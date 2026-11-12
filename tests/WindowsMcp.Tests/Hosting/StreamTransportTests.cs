@@ -177,6 +177,57 @@ public class StreamTransportTests
     }
 
     /// <summary>
+    /// E-1 (R2): the stdio-shaped path carries the same instructions as HTTP. The harness builds
+    /// the server from the <c>IOptions&lt;McpServerOptions&gt;</c> the stdio host resolves, so this
+    /// fails if the instructions were set anywhere but the shared <c>AddWindowsMcp</c> wiring.
+    /// </summary>
+    [Fact]
+    public async Task Initialize_over_the_stdio_wiring_carries_the_server_instructions()
+    {
+        await using var harness = await Harness.StartAsync();
+
+        harness.Client.ServerInstructions.Should().NotBeNullOrEmpty(
+            "AddWindowsMcp sets the instructions, so the stdio transport sends them in initialize");
+        harness.Client.ServerInstructions.Should().Be(ServerInstructions.Text);
+    }
+
+    /// <summary>
+    /// E-1 GREEN: the instructions tell the model that only "An error occurred invoking ..." is an
+    /// unexpected fault. That wording is the SDK's, not ours, so it is pinned against what an
+    /// unexpected fault really reads as over the production wiring: a service throwing a type
+    /// <c>ToolErrors.IsCallerFacing</c> rejects. An SDK upgrade that rewords the mask, or a text
+    /// edit that misquotes it, turns this red. get_element is read-only and not a driving tool, so
+    /// this harness (control indicator on) draws nothing and registers no hotkey.
+    /// </summary>
+    [Fact]
+    public async Task An_unexpected_fault_reads_as_the_mask_the_instructions_quote()
+    {
+        var quoted = System.Text.RegularExpressions.Regex.Match(ServerInstructions.Text, "\"([^\"]*) \\.\\.\\.\"");
+        quoted.Success.Should().BeTrue("the instructions quote the mask with its tool name elided");
+        var mask = quoted.Groups[1].Value;
+        mask.Should().StartWith("An error occurred");
+
+        var uia = new Mock<IUIAutomationService>();
+        uia.Setup(s => s.GetElementAsync("el_1", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new NullReferenceException("a bug, never shown to the caller"));
+        await using var harness = await Harness.StartAsync(configureServices: services => services.AddSingleton(uia.Object));
+        var tools = await harness.Client.ListToolsAsync();
+        var name = tools.Single(t => t.Name.Replace("_", "").Equals("getelement", StringComparison.OrdinalIgnoreCase)).Name;
+        DrivingTools.Names.Should().NotContain(name, "the call must not raise the control indicator");
+
+        var result = await harness.Client.CallToolAsync(name, new Dictionary<string, object?>
+        {
+            ["element_id"] = "el_1",
+        });
+
+        result.IsError.Should().BeTrue();
+        var text = result.Content.OfType<TextContentBlock>().Single().Text;
+        text.Should().StartWith(mask, "the model is told to recognise an unexpected fault by exactly this text");
+        text.Should().NotContain("a bug, never shown", "the mask hides the exception message");
+        uia.Verify(s => s.GetElementAsync("el_1", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>
     /// C-5: the whole summary path over the wire — the client declares sampling, the tool asks it,
     /// the client's model answers, and the answer is what the caller gets. This is the only test
     /// that runs the real <c>McpServerSampling</c> adapter (<c>McpServer.SampleAsync</c>) rather

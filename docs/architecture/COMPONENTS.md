@@ -45,7 +45,7 @@ static async Task<int> RunStdioAsync(string[] args, ServerOptions options)
 
     var builder = Host.CreateApplicationBuilder(args);
     WindowsMcpHost.ConfigureStderrLogging(builder.Logging, http: false);
-    builder.AddWindowsMcp(options)      // Hosting/WindowsMcpHost: all singletons + AddMcpServer(ServerInfo)
+    builder.AddWindowsMcp(options)      // Hosting/WindowsMcpHost: all singletons + AddMcpServer(ServerInfo, ServerInstructions)
         .WithStdioServerTransport();    //   + call-tool filter (ToolErrors; S-11's indicator bracket
                                         //   and takeover note) + WithToolsFromAssembly()
     await builder.Build().RunAsync();

@@ -153,6 +153,64 @@ public class HttpTransportTests
         FileWriteToolName(tools).Should().NotBeNullOrEmpty();
     }
 
+    // ---- E-1: server instructions in the handshake ---------------------------------------------
+
+    /// <summary>
+    /// E-1 (R1): a client that never installed the plugin skill is told the loop at connect time.
+    /// The SDK client exposes what the server sent in <c>initialize</c> as
+    /// <see cref="McpClient.ServerInstructions"/>; it must be exactly the constant, so nothing in
+    /// the HTTP wiring rewrites, trims or drops it.
+    /// </summary>
+    [Fact]
+    public async Task Initialize_over_http_carries_the_server_instructions()
+    {
+        await using var server = await Harness.StartAsync();
+        await using var client = await ConnectAsync(server.McpEndpoint);
+
+        client.ServerInstructions.Should().NotBeNullOrEmpty(
+            "AddWindowsMcp sets the instructions, so the HTTP transport sends them in initialize");
+        client.ServerInstructions.Should().Be(ServerInstructions.Text);
+    }
+
+    /// <summary>
+    /// E-1 (R1), below the SDK client: the protocol field a non-.NET client reads is
+    /// <c>result.instructions</c> of the raw JSON-RPC <c>initialize</c> response. Stateless
+    /// Streamable HTTP may answer as a JSON body or as one SSE <c>data:</c> frame; both are read.
+    /// </summary>
+    [Fact]
+    public async Task Raw_initialize_result_carries_the_instructions_field()
+    {
+        await using var server = await Harness.StartAsync();
+        using var http = new HttpClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, server.McpEndpoint) { Content = InitializeBody() };
+        request.Headers.Accept.ParseAdd("application/json");
+        request.Headers.Accept.ParseAdd("text/event-stream");
+
+        using var response = await http.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+
+        using var doc = JsonDocument.Parse(JsonRpcPayload(body, response.Content.Headers.ContentType?.MediaType));
+        var result = doc.RootElement.GetProperty("result");
+        result.TryGetProperty("instructions", out var instructions).Should().BeTrue(
+            "the initialize result carries the instructions field; the server sent: {0}", body);
+        instructions.GetString().Should().NotBeNullOrEmpty().And.Be(ServerInstructions.Text);
+    }
+
+    /// <summary>The JSON-RPC message in a Streamable HTTP response body: the body itself, or the SSE <c>data:</c> lines.</summary>
+    private static string JsonRpcPayload(string body, string? mediaType)
+    {
+        if (!string.Equals(mediaType, "text/event-stream", StringComparison.OrdinalIgnoreCase))
+            return body;
+
+        var data = body.ReplaceLineEndings("\n").Split('\n')
+            .Where(line => line.StartsWith("data:", StringComparison.Ordinal))
+            .Select(line => line["data:".Length..].TrimStart())
+            .ToArray();
+        data.Should().NotBeEmpty("an SSE answer to initialize carries the response in a data: frame");
+        return string.Join("\n", data);
+    }
+
     [Fact]
     public async Task Api_key_gates_every_path_not_just_the_mcp_route()
     {

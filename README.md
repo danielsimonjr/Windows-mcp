@@ -208,6 +208,12 @@ a playbook that steers Claude toward these tools over raw PowerShell, with
 composed workflows for common tasks and safety rails for destructive
 operations. See [`skills/windows/SKILL.md`](skills/windows/SKILL.md).
 
+Clients that never load the skill (Claude Desktop, an HTTP client, any other MCP host) still get
+its core: the server's `initialize` result carries `instructions` on both transports — the loop
+(snapshot → act by id → confirm → re-snapshot), the calls that retire snapshot ids, reading
+`Truncated` and error text, stopping on a takeover note, and which changes are and are not
+gated by `confirm` (`Hosting/ServerInstructions.cs`, under 2 000 characters).
+
 ## Tool reference
 
 69 tools, grouped:
@@ -392,6 +398,11 @@ Destructive tools require `confirm: true` as an argument and throw
 - `power_action`
 - `firewall(action="add"|"remove")`
 - `env(action="set")`
+
+Not every tool annotated destructive has the gate: `powershell`, `archive` (zip and unzip
+overwrite what is at `dst`), `file_manage` copy/move with `overwrite: true`, `scheduled_task`
+create and run, `service` start, `job` cancel, `window` close and `http_request` run without
+`confirm`, and the server instructions tell every client so.
 
 Beyond the confirm gate, the destructive file actions ask for the specific permission they need:
 a copy or a move over an existing destination needs `overwrite: true`, and deleting a non-empty

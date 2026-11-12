@@ -2,6 +2,25 @@
 
 ### Added
 
+- **Every client is told how to drive the server when it connects** (E-1). The `initialize`
+  result now carries `instructions` — `McpServerOptions.ServerInstructions`, set in
+  `WindowsMcpHost.AddWindowsMcp`, so stdio and HTTP send the same text — a 16-line condensation of
+  `skills/windows/SKILL.md`, which only a Claude Code plugin install ever loads: `snapshot` first,
+  act by `el_N` id, confirm with `assert_element` / `wait_for` (a timeout is `Satisfied:false`),
+  which calls retire snapshot ids, read `Truncated` and the error text, stop on a takeover note,
+  which changes are refused without `confirm: true` and which never ask (`powershell`, `archive`,
+  `file_manage` with overwrite, `scheduled_task` create or run, `service` start, `job` cancel,
+  `window` close, `http_request`), and `powershell` with `background:true` for long scripts. The
+  text is `Hosting/ServerInstructions.Text`: 1 980 characters of printable ASCII with `\n` breaks,
+  under a 2 000-character ceiling. Every sentence is a claim `ServerInstructionsTests` pins against
+  the code — back-ticked names against the discovered tool set, each parameter against its tool's
+  schema, the never-ask list against every `Destructive` tool with no `confirm` parameter (and
+  each item really running without one), the takeover wording against the real note, the
+  snapshot-evicting calls against the service, the quoted error mask against what an unexpected
+  fault reads as over the production wiring — so changing a tool's parameters, its confirm gate or
+  what evicts snapshot ids means changing the sentence. `HttpTransportTests` and
+  `StreamTransportTests` read it back from `initialize` on each transport. No tool added (still
+  69), no tool parameter or description changed.
 - **An "AI is in control" indicator and a takeover hotkey** (parity S-11, a deliberate deviation
   from upstream). While a driving tool runs — `click`, `drag`, `hover`, `type`, `key`, `shortcut`,
   `scroll`, `multi_select`, `multi_edit`, `interact_element`, `file_dialog`, `focus`,
