@@ -1530,6 +1530,77 @@ public sealed class UIAutomationServiceInteractVerbsTests : IDisposable
         (await act.Should().ThrowAsync<OperationCanceledException>()).Which.Should().BeSameAs(cancelled);
     }
 
+    public static TheoryData<string> TimedOutRereads => new()
+    {
+        "expand", "collapse", "set_value_range", "scroll_into_view_bounds", "scroll_into_view_offscreen",
+    };
+
+    [Theory]
+    [MemberData(nameof(TimedOutRereads))]
+    public async Task R23_A_timeout_from_the_detail_re_read_propagates_after_exactly_one_pattern_call_and_no_further_read(string path)
+    {
+        // PR #40 review fix: Reread lets a TimeoutException through, like ReadValue / OnScreenCentre
+        // / CanScroll. The pattern call succeeded; the provider then hung on the read-back, and every
+        // further read would cost the UIA timeout again on the one STA thread (R23). An ordinary
+        // re-read failure is still a null Detail (R7, R12, R17 rows, E_FAIL).
+        var timeout = FlaUiShaped.From(FlaUiShaped.UIA_E_TIMEOUT);
+        timeout.Should().BeOfType<TimeoutException>("precondition");
+        int? readsAtTimeout = null;
+        Fake fake = null!;
+        Func<object> Hang() => () => { readsAtTimeout ??= fake.ProcessIdReads; throw timeout; };
+        string verb;
+        string? value = null;
+        Action verifyOneCall;
+
+        switch (path)
+        {
+            case "expand":
+            case "collapse":
+                {
+                    fake = Arrange("Documents", TreeItemType);
+                    var stateId = Lib.ExpandCollapse.ExpandCollapseState.Id;
+                    var ec = OfferExpandCollapse(fake, path == "expand" ? ExpandCollapseState.Collapsed : ExpandCollapseState.Expanded);
+                    ec.Pattern.Setup(p => p.Expand()).Callback(() => fake.Props[stateId] = Hang());
+                    ec.Pattern.Setup(p => p.Collapse()).Callback(() => fake.Props[stateId] = Hang());
+                    verb = path;
+                    verifyOneCall = path == "expand"
+                        ? () => { ec.Pattern.Verify(p => p.Expand(), Times.Once); ec.Pattern.Verify(p => p.Collapse(), Times.Never); }
+                    : () => { ec.Pattern.Verify(p => p.Collapse(), Times.Once); ec.Pattern.Verify(p => p.Expand(), Times.Never); };
+                    break;
+                }
+            case "set_value_range":
+                {
+                    fake = Arrange("Volume", SliderType);
+                    var range = OfferRange(fake, 0.0, 100.0, current: 10);
+                    range.Setup(p => p.SetValue(It.IsAny<double>())).Callback(() => fake.Props[Lib.RangeValue.Value.Id] = Hang());
+                    (verb, value) = ("set_value", "5");
+                    verifyOneCall = () => range.Verify(p => p.SetValue(5), Times.Once);
+                    break;
+                }
+            default:
+                {
+                    fake = Arrange("Row 40", ListItemType);
+                    var hung = path == "scroll_into_view_bounds" ? Lib.Element.BoundingRectangle.Id : Lib.Element.IsOffscreen.Id;
+                    var scrollItem = OfferScrollItem(fake, onScroll: () =>
+                    {
+                        SetGeometry(fake, offscreen: false, 100, 200, 41, 21);
+                        fake.Props[hung] = Hang();
+                    });
+                    verb = "scroll_into_view";
+                    verifyOneCall = () => scrollItem.Verify(p => p.ScrollIntoView(), Times.Once);
+                    break;
+                }
+        }
+
+        Func<Task> act = () => _svc.InteractAsync(fake.Id, verb, value);
+
+        (await act.Should().ThrowAsync<TimeoutException>("a hung provider is not a null Detail")).Which.Should().BeSameAs(timeout);
+        verifyOneCall();
+        readsAtTimeout.Should().NotBeNull("precondition: the re-read was reached");
+        fake.ProcessIdReads.Should().Be(readsAtTimeout!.Value, "the hung target is not probed again (R23)");
+        NoInputAndNoFocus(fake);
+    }
+
     [Theory]
     [InlineData("first")]
     [InlineData("second")]

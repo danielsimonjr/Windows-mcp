@@ -988,12 +988,13 @@ public sealed class UIAutomationService : IUIAutomationService
 
     /// <summary>
     /// What the control shows after a pattern call, or null when it cannot be read back: the call
-    /// itself succeeded, so a failed re-read is not a failure of the verb.
+    /// itself succeeded, so a failed re-read is not a failure of the verb. A timeout is not a
+    /// failed read but a hung provider, and propagates like every other guarded read here (R23).
     /// </summary>
     private static string? Reread(Func<string> read)
     {
         try { return read(); }
-        catch (Exception ex) when (ex is not OperationCanceledException) { return null; }
+        catch (Exception ex) when (ex is not OperationCanceledException and not TimeoutException) { return null; }
     }
 
     private static string Num(double d) => d.ToString(System.Globalization.CultureInfo.InvariantCulture);
