@@ -11,7 +11,7 @@
   which changes are refused without `confirm: true` and which never ask (`powershell`, `archive`,
   `file_manage` with overwrite, `scheduled_task` create or run, `service` start, `job` cancel,
   `window` close, `http_request`), and `powershell` with `background:true` for long scripts. The
-  text is `Hosting/ServerInstructions.Text`: 1 999 characters of printable ASCII with `\n` breaks,
+  text is `Hosting/ServerInstructions.Text`: 1 980 characters of printable ASCII with `\n` breaks,
   under a 2 000-character ceiling. Every sentence is a claim `ServerInstructionsTests` pins against
   the code — back-ticked names against the discovered tool set, each parameter against its tool's
   schema, the never-ask list against every `Destructive` tool with no `confirm` parameter (and

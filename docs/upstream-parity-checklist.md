@@ -1674,8 +1674,8 @@ connect time.
 `Hosting/ServerInstructions.Text` in `WindowsMcpHost.AddWindowsMcp`, so stdio and HTTP send the
 same `instructions` in the `initialize` result (`HttpTransportTests` reads it through the SDK
 client and from the raw JSON-RPC body; `StreamTransportTests` over the stdio wiring). The text is
-16 lines, not 30: 1 999 characters of printable ASCII with `\n` breaks against a 2 000-character
-ceiling — **one character of headroom**, so any addition is a trade. It is a set of claims pinned
+16 lines, not 30: 1 980 characters of printable ASCII with `\n` breaks against a 2 000-character
+ceiling — **twenty characters of headroom**, so any addition is a trade. It is a set of claims pinned
 by `ServerInstructionsTests` rather than prose: every back-ticked word is a discovered tool; every
 parameter named is in that tool's schema; the never-ask list (`powershell`, `archive`,
 `file_manage` with overwrite, `scheduled_task` create or run, `service` start, `job` cancel,

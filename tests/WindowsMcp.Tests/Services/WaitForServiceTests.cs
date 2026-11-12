@@ -561,7 +561,11 @@ public class WaitForFindPathIntegrationTests
         var result = await svc.WaitForAsync(new WaitRequest(
             condition, "Save", TimeoutMs: 0, Scope: FindScope.Window, WindowTitle: MissingWindowTitle()));
 
-        result.Detail.Should().Contain("No top-level window matching", "the poll ran the find path");
+        // Both paths can say "No top-level window matching": the find path enumerates the
+        // desktop's children through UIA itself, the snapshot path asks IWindowService.ListAsync
+        // for the inventory. So the message shows a poll ran, and the Times.Never on ListAsync
+        // below is what shows it was the find path - the two assertions are not in conflict.
+        result.Detail.Should().Contain("No top-level window matching", "a poll ran and looked for the window");
         input.Verify(i => i.GetCursorPositionAsync(It.IsAny<CancellationToken>()), Times.Never,
             "no snapshot header was read, so no snapshot was taken and the caller's ids survive");
         windows.Verify(w => w.EnumerateMonitorsAsync(It.IsAny<CancellationToken>()), Times.Never);
