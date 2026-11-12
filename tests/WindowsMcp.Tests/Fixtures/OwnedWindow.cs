@@ -76,7 +76,8 @@ internal sealed class OwnedWindow : IDisposable
         Title = title;
         var thread = new Thread(Pump) { IsBackground = true, Name = "wmcp-owned-window" };
         thread.Start();
-        _ready.Wait(TimeSpan.FromSeconds(10));
+        if (!_ready.Wait(TimeSpan.FromSeconds(10)))
+            throw new TimeoutException($"{nameof(OwnedWindow)} '{title}': the window thread did not create its window within 10 s.");
     }
 
     public bool Exists => Handle != IntPtr.Zero && IsWindow(Handle);

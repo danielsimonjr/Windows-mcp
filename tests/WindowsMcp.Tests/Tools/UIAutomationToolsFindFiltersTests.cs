@@ -168,12 +168,79 @@ public class UIAutomationToolsFindFiltersTests
     [Fact]
     public async Task FindElement_refuses_within_with_a_window_title()
     {
+        // RE-PINNED (PR #42 review Q1): this row passed only because ParseTarget refused the window
+        // title first ("window is only used with scope=window"). The refusal must name within.
         var mock = Finding();
 
         Func<Task> act = () => new UIAutomationTools(mock.Object).FindElement("x", window: "Notepad", within: "el_3");
 
-        await act.Should().ThrowAsync<ArgumentException>();
+        (await act.Should().ThrowAsync<ArgumentException>()).Which.ParamName.Should().Be("within");
         mock.VerifyNoOtherCalls();
+    }
+
+    // ---- PR #42 review Q1: a within conflict is reported as within, whatever else is wrong ------
+
+    /// <summary>Every target a non-blank within conflicts with, including ones ParseTarget refuses on its own.</summary>
+    public static TheoryData<string, string?> WithinConflicts => new()
+    {
+        { "desktop", null },
+        { "DESKTOP", null },
+        { "Desktop", "Notepad" },
+        { "window", "Notepad" },
+        { "WINDOW", "Notepad" },
+        { "foreground", "Notepad" },   // a window title without scope=window
+        { "FOREGROUND", "Notepad" },
+        { "window", null },            // scope=window with no window
+        { "window", "   " },           // a blank window is no window
+        { "everywhere", null },        // an unknown scope
+        { "everywhere", "Notepad" },
+    };
+
+    [Theory]
+    [MemberData(nameof(WithinConflicts))]
+    public async Task FindElement_reports_a_within_conflict_as_within_whatever_else_is_wrong_with_the_target(string scope, string? window)
+    {
+        var mock = Finding();
+
+        Func<Task> act = () => new UIAutomationTools(mock.Object).FindElement("x", scope: scope, window: window, within: "el_3");
+
+        var ex = (await act.Should().ThrowAsync<ArgumentException>()).Which;
+        ex.ParamName.Should().Be("within");
+        ex.Message.Should().Contain("within");
+        mock.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("foreground", null)]
+    [InlineData("Foreground", "")]
+    [InlineData("FOREGROUND", "   ")]
+    public async Task FindElement_accepts_within_with_the_default_scope_and_a_blank_window(string scope, string? window)
+    {
+        var seen = new List<FindElementRequest>();
+
+        await new UIAutomationTools(Finding(seen: seen).Object).FindElement("x", scope: scope, window: window, within: "el_3");
+
+        var r = seen.Should().ContainSingle().Subject;
+        (r.Scope, r.WindowTitle, r.Within).Should().Be((FindScope.Foreground, (string?)null, "el_3"));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task FindElement_with_a_blank_within_keeps_every_existing_target_refusal(string? within)
+    {
+        var tools = new UIAutomationTools(Finding().Object);
+
+        Func<Task> noTitle = () => tools.FindElement("x", scope: "window", within: within);
+        Func<Task> strayTitle = () => tools.FindElement("x", scope: "desktop", window: "Notepad", within: within);
+        Func<Task> titleWithoutScope = () => tools.FindElement("x", window: "Notepad", within: within);
+        Func<Task> unknownScope = () => tools.FindElement("x", scope: "everywhere", within: within);
+
+        await noTitle.Should().ThrowAsync<ArgumentException>().WithMessage("*requires window*");
+        await strayTitle.Should().ThrowAsync<ArgumentException>().WithMessage("*only used with scope=window*");
+        await titleWithoutScope.Should().ThrowAsync<ArgumentException>().WithMessage("*only used with scope=window*");
+        await unknownScope.Should().ThrowAsync<ArgumentException>().WithMessage("*everywhere*");
     }
 
     [Theory]

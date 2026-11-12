@@ -54,12 +54,13 @@ public sealed class UIAutomationTools
 
     /// <summary>
     /// E-4: <c>within</c> replaces scope and window, so it is refused with a scope other than the
-    /// default (a window title is already refused without scope=window).
+    /// default or with a window title. Checked BEFORE the scope and window are parsed, so the
+    /// refusal names <c>within</c> whatever else is wrong with the target.
     /// </summary>
-    private static string? WithinOrNull(string? within, FindScope scope)
+    private static string? WithinOrNull(string? within, string? scope, string? window)
     {
         if (Given(within) is not { } id) return null;
-        if (scope != FindScope.Foreground)
+        if (!string.Equals(scope, "foreground", StringComparison.OrdinalIgnoreCase) || Given(window) is not null)
             throw new ArgumentException("within searches one element's subtree, so it replaces scope and window: give within alone.", nameof(within));
         return id;
     }
@@ -139,8 +140,8 @@ public sealed class UIAutomationTools
             throw new ArgumentException($"max_results must be between 1 and 100, got {max_results}; page through more with offset.", nameof(max_results));
         if (offset < 0)
             throw new ArgumentException($"offset must be 0 or more, got {offset}", nameof(offset));
+        var subtree = WithinOrNull(within, scope, window);
         var (parsedScope, windowTitle) = ParseTarget(scope, window);
-        var subtree = WithinOrNull(within, parsedScope);
         var result = await _uia.FindElementAsync(new FindElementRequest(text ?? "", ParseKind(kind), parsedScope, windowTitle,
             include_offscreen, Given(automation_id), Given(control_type), Given(class_name), subtree, max_results, offset));
         return JsonSerializer.Serialize(result);
@@ -249,8 +250,8 @@ public sealed class UIAutomationTools
         if (string.IsNullOrWhiteSpace(text) && !(searchesElements && hasPropertyFilter))
             throw new ArgumentException($"{WaitConditions.NameOf(parsedCondition)} needs text: what to look for.", nameof(text));
 
+        var subtree = WithinOrNull(within, scope, window);
         var (parsedScope, windowTitle) = ParseTarget(scope, window);
-        var subtree = WithinOrNull(within, parsedScope);
         var request = new WaitRequest(parsedCondition, text, timeout_ms, interval_ms, ParseKind(kind), parsedScope, windowTitle, include_offscreen, use_dom,
             Given(automation_id), Given(control_type), Given(class_name), subtree);
         return JsonSerializer.Serialize(await _uia.WaitForAsync(request));

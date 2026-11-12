@@ -324,11 +324,11 @@ public class UIAutomationToolsWaitForTests
     }
 
     [Fact]
-    public void WaitFor_keeps_the_seven_parameters_it_had_in_the_order_it_had_them()
+    public void WaitFor_keeps_its_nine_pre_E4_parameters_in_order_and_appends_the_four_find_filters()
     {
-        // Callers pass text positionally and the schema order is what the model copies; the two
-        // new parameters go on the END. E-4 appends its four find filters after those, again on
-        // the end.
+        // Callers pass text positionally and the schema order is what the model copies: the seven
+        // original parameters first, then B-6's condition and use_dom, then E-4's four find
+        // filters, each addition on the END.
         var names = typeof(UIAutomationTools).GetMethod(nameof(UIAutomationTools.WaitFor))!
             .GetParameters().Select(p => p.Name).ToArray();
 
@@ -528,6 +528,72 @@ public class UIAutomationToolsWaitForTests
         Func<Task> act = () => new UIAutomationTools(mock.Object).WaitFor("Save", scope: "desktop", within: "el_3");
 
         (await act.Should().ThrowAsync<ArgumentException>()).Which.ParamName.Should().Be("within");
+        mock.VerifyNoOtherCalls();
+    }
+
+    // ---- PR #42 review Q1: a within conflict is reported as within, whatever else is wrong ------
+
+    public static TheoryData<string, string?> WithinConflicts => new()
+    {
+        { "desktop", null },
+        { "DESKTOP", null },
+        { "Desktop", "Notepad" },
+        { "window", "Notepad" },
+        { "WINDOW", "Notepad" },
+        { "foreground", "Notepad" },   // a window title without scope=window
+        { "FOREGROUND", "Notepad" },
+        { "window", null },            // scope=window with no window
+        { "window", "   " },           // a blank window is no window
+        { "everywhere", null },        // an unknown scope
+        { "everywhere", "Notepad" },
+    };
+
+    [Theory]
+    [MemberData(nameof(WithinConflicts))]
+    public async Task WaitFor_reports_a_within_conflict_as_within_whatever_else_is_wrong_with_the_target(string scope, string? window)
+    {
+        var mock = Waiting();
+
+        Func<Task> act = () => new UIAutomationTools(mock.Object).WaitFor("Save", scope: scope, window: window, within: "el_3");
+
+        var ex = (await act.Should().ThrowAsync<ArgumentException>()).Which;
+        ex.ParamName.Should().Be("within");
+        ex.Message.Should().Contain("within");
+        mock.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("foreground", null)]
+    [InlineData("Foreground", "")]
+    [InlineData("FOREGROUND", "   ")]
+    public async Task WaitFor_accepts_within_with_the_default_scope_and_a_blank_window(string scope, string? window)
+    {
+        var seen = new List<WaitRequest>();
+
+        await new UIAutomationTools(Waiting(seen: seen).Object).WaitFor("Save", scope: scope, window: window, within: "el_3");
+
+        var r = seen.Should().ContainSingle().Subject;
+        (r.Scope, r.WindowTitle, r.Within).Should().Be((FindScope.Foreground, (string?)null, "el_3"));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task WaitFor_with_a_blank_within_keeps_every_existing_target_refusal(string? within)
+    {
+        var mock = Waiting();
+        var tools = new UIAutomationTools(mock.Object);
+
+        Func<Task> noTitle = () => tools.WaitFor("Save", scope: "window", within: within);
+        Func<Task> strayTitle = () => tools.WaitFor("Save", scope: "desktop", window: "Notepad", within: within);
+        Func<Task> titleWithoutScope = () => tools.WaitFor("Save", window: "Notepad", within: within);
+        Func<Task> unknownScope = () => tools.WaitFor("Save", scope: "everywhere", within: within);
+
+        await noTitle.Should().ThrowAsync<ArgumentException>().WithMessage("*requires window*");
+        await strayTitle.Should().ThrowAsync<ArgumentException>().WithMessage("*only used with scope=window*");
+        await titleWithoutScope.Should().ThrowAsync<ArgumentException>().WithMessage("*only used with scope=window*");
+        await unknownScope.Should().ThrowAsync<ArgumentException>().WithMessage("*everywhere*");
         mock.VerifyNoOtherCalls();
     }
 

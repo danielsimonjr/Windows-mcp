@@ -118,7 +118,10 @@ internal sealed class OwnedFindFiltersWindow : IDisposable
     {
         var thread = new Thread(Pump) { IsBackground = true, Name = "wmcp-owned-find-filters" };
         thread.Start();
-        _ready.Wait(TimeSpan.FromSeconds(10));
+        // Fail here, naming the fixture, rather than letting every row fail later on a window that
+        // is not there yet (or worse, pass a row that only asserts absence).
+        if (!_ready.Wait(TimeSpan.FromSeconds(10)))
+            throw new TimeoutException($"{nameof(OwnedFindFiltersWindow)}: the window thread did not create its window within 10 s.");
     }
 
     public bool Exists => Handle != IntPtr.Zero && IsWindow(Handle);
