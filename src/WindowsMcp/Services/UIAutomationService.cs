@@ -60,6 +60,7 @@ public sealed class UIAutomationService : IUIAutomationService
         _cache = new ElementCache<AutomationElement>(ElementCache.CapacityFor(_treeOptions));
         _log = log ?? (ILogger)NullLogger<UIAutomationService>.Instance;
         _automation = new UIA3Automation();
+        ParentOf = ControlViewParent;
         _staThread = new Thread(WorkerLoop) { IsBackground = true, Name = "WindowsMcp-UA-STA" };
         _staThread.SetApartmentState(ApartmentState.STA);
         _staThread.Start();
@@ -818,12 +819,19 @@ public sealed class UIAutomationService : IUIAutomationService
         // disabled control is still an unknown action.
         var verb = action.ToLowerInvariant();
         if (Array.IndexOf(InteractActions, verb) < 0)
-            throw new ArgumentException($"Unknown interact action '{action}'; expected click|invoke|toggle|select|focus|type.", nameof(action));
+            throw UnknownInteractAction(action);
         if (verb == "type" && value is null)
             throw new ArgumentException("'type' requires a value: the text to enter.", nameof(value));
+        if (verb == "set_value" && value is null)
+            throw new ArgumentException(SetValueNeedsValue, nameof(value));
+        // An empty string is "no value": model clients send "" for an argument they do not use.
+        if (verb is "expand" or "collapse" or "scroll_into_view" && !string.IsNullOrEmpty(value))
+            throw new ArgumentException($"'{verb}' takes no value.", nameof(value));
 
+        // E-2: scroll_into_view moves nothing but the view, so a disabled row may still be brought
+        // on screen; every other verb acts on the control and is refused when it reports disabled.
         var step = await OnStaAsync(
-            () => Refusing(elementId, verb, el => InteractOnSta(el, elementId, action, value), acts: true), ct).ConfigureAwait(false);
+            () => Refusing(elementId, verb, el => InteractOnSta(el, elementId, action, value), acts: verb != "scroll_into_view"), ct).ConfigureAwait(false);
 
         if (step.PendingClick is { } point)
             await _input.ClickAsync(point.X, point.Y, MouseButton.Left, 1, ct).ConfigureAwait(false);
@@ -835,7 +843,30 @@ public sealed class UIAutomationService : IUIAutomationService
 
     // D-2: every branch either acts through a UIA pattern or fails naming the pattern and the
     // control — never a silent no-op — and the result says which pattern or fallback fired.
-    private static readonly string[] InteractActions = ["click", "invoke", "toggle", "select", "focus", "type"];
+    private static readonly string[] InteractActions =
+        ["click", "invoke", "toggle", "select", "focus", "type", "expand", "collapse", "set_value", "scroll_into_view"];
+
+    private const string SetValueNeedsValue =
+        "'set_value' requires a value: a number for a slider or other range control, otherwise the text to set.";
+
+    private static ArgumentException UnknownInteractAction(string action)
+        => new($"Unknown interact action '{action}'; expected {string.Join('|', InteractActions)}.", nameof(action));
+
+    /// <summary>How far up the scroll_into_view refusal looks for something scrollable.</summary>
+    private const int MaxAncestorLevels = 25;
+
+    /// <summary>
+    /// E-2: the parent of an element in the control view, or null at the top or when the provider
+    /// cannot say. A property so a test can give a fake element (which has no native parent) one.
+    /// </summary>
+    internal Func<AutomationElement, AutomationElement?> ParentOf { get; set; }
+
+    private AutomationElement? ControlViewParent(AutomationElement el)
+    {
+        try { return _automation.TreeWalkerFactory.GetControlViewWalker().GetParent(el); }
+        // A timeout is a hung provider, not "no parent": it must reach the caller (R23).
+        catch (Exception ex) when (ex is not OperationCanceledException and not TimeoutException) { return null; }
+    }
 
     private InteractStep InteractOnSta(AutomationElement el, string elementId, string action, string? value)
     {
@@ -902,9 +933,226 @@ public sealed class UIAutomationService : IUIAutomationService
                     }
                     return new(Done("Keyboard", "typed at the caret"), PendingText: value);
                 }
+            case "expand":
+            case "collapse":
+                {
+                    var pattern = el.Patterns.ExpandCollapse.PatternOrDefault ?? throw NotSupported(el, "ExpandCollapsePattern");
+                    bool expand = a == "expand";
+                    // Read first: a provider throws on a leaf, and a control already where the
+                    // caller wants it must not be flipped by a provider that treats Expand as a toggle.
+                    if (pattern.ExpandCollapseState.TryGetValue(out var state))
+                    {
+                        if (state == ExpandCollapseState.LeafNode)
+                            throw new InvalidOperationException($"Cannot {a} {Describe(el)}: it is a leaf node with nothing to {a}.");
+                        if (state == (expand ? ExpandCollapseState.Expanded : ExpandCollapseState.Collapsed))
+                            return new(Done("ExpandCollapsePattern", $"already {state}"));
+                    }
+                    if (expand) pattern.Expand(); else pattern.Collapse();
+                    return new(Done("ExpandCollapsePattern", Reread(() => $"now {pattern.ExpandCollapseState.Value}")));
+                }
+            case "set_value":
+                {
+                    if (value is null) throw new ArgumentException(SetValueNeedsValue, nameof(value));
+                    if (el.Patterns.RangeValue.PatternOrDefault is { } range)
+                        return new(SetRangeValue(el, range, value, Done));
+
+                    var text = el.Patterns.Value.PatternOrDefault ?? throw NotSupported(el, "RangeValuePattern or ValuePattern");
+                    if (text.IsReadOnly.ValueOrDefault)
+                        throw new InvalidOperationException($"Cannot set_value {Describe(el)}: its ValuePattern is read-only.");
+                    return new(SetTextValue(el, text, value, Done));
+                }
+            case "scroll_into_view":
+                {
+                    if (el.Patterns.ScrollItem.PatternOrDefault is not { } scrollItem)
+                    {
+                        // Most providers do not offer the pattern. When the element is already on
+                        // screen there is nothing to do, and that is a success, not a refusal.
+                        if (IsGone(el)) throw UiRefusals.Gone(elementId);
+                        if (OnScreenCentre(el) is { } at)
+                            return new(Done("None", $"already on screen, centre ({at.X},{at.Y})"));
+                        throw NoScrollItem(el, elementId);
+                    }
+                    scrollItem.ScrollIntoView();
+                    return new(Done("ScrollItemPattern", Reread(() =>
+                    {
+                        var r = el.Properties.BoundingRectangle.ValueOrDefault;
+                        return el.Properties.IsOffscreen.ValueOrDefault || r.Width <= 0 || r.Height <= 0
+                            ? "the control still reports offscreen"
+                            : $"now on screen, centre ({r.Left + r.Width / 2},{r.Top + r.Height / 2})";
+                    })));
+                }
             default:
-                throw new ArgumentException($"Unknown interact action '{action}'; expected click|invoke|toggle|select|focus|type.", nameof(action));
+                throw UnknownInteractAction(action);
         }
+    }
+
+    /// <summary>
+    /// What the control shows after a pattern call, or null when it cannot be read back: the call
+    /// itself succeeded, so a failed re-read is not a failure of the verb.
+    /// </summary>
+    private static string? Reread(Func<string> read)
+    {
+        try { return read(); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { return null; }
+    }
+
+    private static string Num(double d) => d.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// E-2 set_value on a range control (slider, spinner, scroll bar): the value must be a finite
+    /// number, in invariant format, inside the range the control reports. A bound the provider
+    /// does not report is not checked.
+    /// </summary>
+    private static InteractResult SetRangeValue(AutomationElement el, FlaUI.Core.Patterns.IRangeValuePattern range,
+        string value, Func<string, string?, InteractResult> done)
+    {
+        // Before the value is looked at: nothing the caller sends can be written to a read-only range.
+        if (range.IsReadOnly.ValueOrDefault)
+            throw new InvalidOperationException($"Cannot set_value {Describe(el)}: its RangeValuePattern is read-only.");
+
+        // A bound that is NaN, or a pair that is inverted, tells the caller nothing: treat it as unknown.
+        double? min = range.Minimum.TryGetValue(out var lo) && !double.IsNaN(lo) ? lo : null;
+        double? max = range.Maximum.TryGetValue(out var hi) && !double.IsNaN(hi) ? hi : null;
+        if (min > max) { min = null; max = null; }
+        string bounds = (min, max) switch
+        {
+            ({ } l, { } h) => $" between {Num(l)} and {Num(h)}",
+            ({ } l, null) => $" of at least {Num(l)}",
+            (null, { } h) => $" of at most {Num(h)}",
+            _ => "",
+        };
+
+        if (!double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var number)
+            || !double.IsFinite(number))
+            throw new ArgumentException(
+                $"set_value on {Describe(el)} needs a number{bounds}, with '.' as the decimal point; got '{UiRefusals.Clip(value)}'.", nameof(value));
+        if (number < min || number > max)
+            throw new ArgumentException(
+                $"set_value on {Describe(el)} needs a number{bounds}; {UiRefusals.Clip(value.Trim())} is outside that range.", nameof(value));
+
+        SetOrRejected(el, value, () => range.SetValue(number));
+        // The value read back, not the one asked for: a control with a step snaps to it.
+        return done("RangeValuePattern", Reread(() =>
+            $"now {Num(range.Value.Value)}" + (min is { } l && max is { } h ? $" (range {Num(l)} to {Num(h)})" : "")));
+    }
+
+    /// <summary>
+    /// E-2 set_value through a writable ValuePattern, verified: providers accept a write they then
+    /// ignore (a WinForms slider, a drop-down list given a non-item), so the value is read before
+    /// and after and a write that changed nothing is refused. A password field is never read, and
+    /// a control whose value cannot be read is taken at its word. No focus call and no keyboard
+    /// fallback: <c>type</c> is the verb that falls back to typing.
+    /// </summary>
+    private static InteractResult SetTextValue(AutomationElement el, FlaUI.Core.Patterns.IValuePattern text,
+        string value, Func<string, string?, InteractResult> done)
+    {
+        const string Unverified = "replaced the whole value";
+        bool password = ReportsPassword(el);
+        string? before = password ? null : ReadValue(text);
+
+        SetOrRejected(el, password ? null : value, () => text.SetValue(value));
+
+        if (before is null || ReadValue(text) is not { } after) return done("ValuePattern", Unverified);
+        string shown = UiRefusals.Clip(UiText.Sanitize(after));
+        if (after != value && after == before)
+            throw new InvalidOperationException(
+                $"{Describe(el)} accepted the call but its value did not change: it still shows '{shown}'.");
+        return done("ValuePattern", $"now '{shown}'");
+    }
+
+    private static string? ReadValue(FlaUI.Core.Patterns.IValuePattern text)
+    {
+        try { return text.Value.TryGetValue(out var v) ? v : null; }
+        catch (Exception ex) when (ex is not OperationCanceledException and not TimeoutException) { return null; }
+    }
+
+    /// <summary>True unless the element positively answers "not a password": a value that might be one is never read or echoed.</summary>
+    private static bool ReportsPassword(AutomationElement el)
+    {
+        try { return el.Properties.IsPassword.TryGetValue(out var isPassword) && isPassword; }
+        catch (Exception ex) when (ex is not OperationCanceledException and not TimeoutException) { return true; }
+    }
+
+    /// <summary>
+    /// Runs a pattern's SetValue. A provider that rejects the value does it with a bare
+    /// ArgumentException ("Value does not fall within the expected range.") or, through FlaUI, a
+    /// Win32Exception (DISP_E_TYPEMISMATCH): neither names the control, and the second is not
+    /// caller-facing. Both become a refusal that does; <see cref="Refusing"/> still reports a
+    /// control that died during the call as gone. <paramref name="echo"/> is null for a password.
+    /// </summary>
+    private static void SetOrRejected(AutomationElement el, string? echo, Action set)
+    {
+        try { set(); }
+        catch (Exception ex) when (ex is ArgumentException or System.ComponentModel.Win32Exception)
+        {
+            throw new InvalidOperationException(echo is null
+                ? $"{Describe(el)} rejected the value."
+                : $"{Describe(el)} rejected the value '{UiRefusals.Clip(echo)}': {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>
+    /// The centre of an element that is provably on screen: it answers "not offscreen" and has
+    /// bounds with area. An element that cannot say is not assumed to be visible.
+    /// </summary>
+    private static (int X, int Y)? OnScreenCentre(AutomationElement el)
+    {
+        try
+        {
+            if (!el.Properties.IsOffscreen.TryGetValue(out var offscreen) || offscreen) return null;
+            if (!el.Properties.BoundingRectangle.TryGetValue(out var r) || r.Width <= 0 || r.Height <= 0) return null;
+            return (r.Left + r.Width / 2, r.Top + r.Height / 2);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not TimeoutException) { return null; }
+    }
+
+    /// <summary>
+    /// Scrollable the way the snapshot means it (<see cref="UiClassifier.IsScrollable"/>): the
+    /// pattern AND an axis that scrolls. WPF lists offer ScrollPattern with nothing to scroll.
+    /// </summary>
+    private static bool CanScroll(AutomationElement el)
+    {
+        try
+        {
+            return el.Patterns.Scroll.PatternOrDefault is { } scroll
+                && (scroll.VerticallyScrollable.ValueOrDefault || scroll.HorizontallyScrollable.ValueOrDefault);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not TimeoutException) { return false; }
+    }
+
+    /// <summary>
+    /// E-2: scroll_into_view on an element with no ScrollItemPattern (most apps do not implement
+    /// it). The way out is to scroll whatever contains it, so the refusal names the nearest
+    /// scrollable ancestor by an id the caller can pass straight to <c>scroll</c>.
+    /// </summary>
+    private InvalidOperationException NoScrollItem(AutomationElement el, string elementId)
+    {
+        if (IsGone(el)) return UiRefusals.Gone(elementId);
+
+        string what = $"ScrollItemPattern not supported on {Describe(el)} ({elementId})";
+        if (NearestScrollableAncestor(el) is not { } ancestor)
+            return new($"{what}. Scroll the nearest scrollable container instead with the scroll tool " +
+                       "(find_element with kind:scrollable lists them), then take a new snapshot.");
+        return new($"{what}. Scroll its container instead: scroll with element_id {_cache.Add(ancestor)} " +
+                   $"({Describe(ancestor)}), then take a new snapshot.");
+    }
+
+    private AutomationElement? NearestScrollableAncestor(AutomationElement el)
+    {
+        var current = el;
+        for (int level = 0; level < MaxAncestorLevels; level++)
+        {
+            AutomationElement? parent;
+            // A failed walk means "no ancestor to name": the refusal is still the answer. A
+            // timeout is different: the provider is hung, every further read costs the UIA
+            // timeout on the one STA thread, so it propagates and nothing is re-read (R23).
+            try { parent = ParentOf(current); }
+            catch (Exception ex) when (ex is not OperationCanceledException and not TimeoutException) { return null; }
+            if (parent is null || ReferenceEquals(parent, current)) return null;
+            if (CanScroll(parent)) return parent;
+            current = parent;
+        }
+        return null;
     }
 
     private static (int X, int Y) ClickPoint(AutomationElement el)
@@ -920,7 +1168,9 @@ public sealed class UIAutomationService : IUIAutomationService
         try { return $"now {toggle.ToggleState.ValueOrDefault}"; } catch { return null; }
     }
 
-    private static string Describe(AutomationElement el) => $"{TryGetControlType(el)} '{TryGetName(el)}'";
+    // The name is clipped: a row whose Name is its whole text would push the part of a refusal
+    // that says what to do past the 2 000-character cap on error messages.
+    private static string Describe(AutomationElement el) => $"{TryGetControlType(el)} '{UiRefusals.Clip(TryGetName(el))}'";
 
     /// <summary>
     /// D-10: the refusal for a pattern the element does not offer — a caller-facing type (as a

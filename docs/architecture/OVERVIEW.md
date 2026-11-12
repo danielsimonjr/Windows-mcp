@@ -105,7 +105,7 @@ Windows-MCP exposes **69 MCP tools** across 19 tool classes:
 | `GetState` | Capture the UI element tree of the foreground window (three levels deep, bounded by the element budget) |
 | `FindElement` | Find elements whose name/value contains text (kind: any / interactive / text / scrollable) |
 | `GetElement` | Get properties of a specific UI element by id, answered under that id |
-| `InteractElement` | Act on a UI element by id: click / invoke / toggle / select / focus / type, through the UIA pattern or a physical fallback; returns which one fired. An unsupported pattern, or a control that reports disabled, is refused naming the control — the disabled one before anything is touched |
+| `InteractElement` | Act on a UI element by id: click / invoke / toggle / select / focus / type / expand / collapse / set_value / scroll_into_view, through the UIA pattern or a physical fallback; returns which one fired and what the control shows afterwards. An unsupported pattern, or a control that reports disabled, is refused naming the control — the disabled one before anything is touched (`scroll_into_view`, which moves only the view, is allowed on a disabled control) |
 | `GetText` | Extract text content from a UI element |
 | `GetTable` | Extract tabular data from a grid/table element |
 | `AssertElement` | Assert element state (exists / enabled / checked / visible / focused / value with `expected`); `PASS` or `FAIL: <state> — observed <what was found>` |

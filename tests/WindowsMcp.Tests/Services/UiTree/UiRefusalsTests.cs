@@ -438,4 +438,45 @@ public class UiRefusalsTests
     [MemberData(nameof(Probed))]
     public void NeedsProbe_is_true_for_what_the_probe_can_reinterpret(Exception ex)
         => UiRefusals.NeedsProbe(ex).Should().BeTrue();
+
+    // ---- E-2 round 2 (C): Clip --------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(79)]
+    [InlineData(80)]
+    public void Clip_leaves_up_to_80_characters_untouched(int length)
+    {
+        var text = new string('n', length);
+
+        UiRefusals.Clip(text).Should().BeSameAs(text);
+    }
+
+    [Theory]
+    [InlineData(81)]
+    [InlineData(3000)]
+    public void Clip_cuts_at_80_and_appends_three_ascii_dots(int length)
+        => UiRefusals.Clip(new string('n', length)).Should().Be(new string('n', 80) + "...");
+
+    [Fact]
+    public void Clip_never_splits_a_surrogate_pair_at_the_cut()
+    {
+        // 79 chars, then a pair straddling the 80th/81st position: the cut moves back one so the
+        // quoted name never ends in a lone high surrogate (which JSON would turn into U+FFFD).
+        var text = new string('n', 79) + "\U0001F600" + "tail";
+
+        var clipped = UiRefusals.Clip(text);
+
+        clipped.Should().Be(new string('n', 79) + "...");
+        char.IsHighSurrogate(clipped[78]).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Clip_keeps_a_surrogate_pair_that_ends_exactly_at_80()
+        => UiRefusals.Clip(new string('n', 78) + "\U0001F600" + "tail").Should().Be(new string('n', 78) + "\U0001F600" + "...");
+
+    [Fact]
+    public void MaxQuoted_is_80()
+        => UiRefusals.MaxQuoted.Should().Be(80);
 }

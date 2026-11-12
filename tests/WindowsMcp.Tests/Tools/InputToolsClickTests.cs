@@ -167,6 +167,22 @@ public class InputToolsClickTests
     }
 
     [Fact]
+    public async Task Click_offscreen_refusal_offers_interact_element_scroll_into_view()
+    {
+        // E-2 neighbour: the refusal the caller actually sees from `click` names the one-call fix.
+        var input = ClickingInput();
+        var uia = new Mock<IUIAutomationService>();
+        uia.Setup(s => s.GetElementAsync("el_5", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(InputVerb.Element(id: "el_5", offscreen: true));
+
+        var act = () => InputVerb.Tools(input, uia).Click(element_id: "el_5");
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message
+            .Should().Contain("interact_element").And.Contain("scroll_into_view");
+        input.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task Click_refuses_an_element_with_no_bounds_and_never_reaches_the_desktop()
     {
         var input = ClickingInput();

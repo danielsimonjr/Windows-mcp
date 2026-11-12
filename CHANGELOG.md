@@ -2,6 +2,51 @@
 
 ### Added
 
+- **`interact_element` expands, collapses, sets a value and scrolls into view** (E-2). Four verbs
+  join the six (now `click|invoke|toggle|select|focus|type|expand|collapse|set_value|
+  scroll_into_view`), each in one call with no pointer movement or keystroke:
+  - `expand` / `collapse` act through `ExpandCollapsePattern` (tree nodes, combo boxes, menus,
+    collapsible panes). The state is read first: a control already where the caller wants it is a
+    success (`Detail` `already Expanded`) and is not flipped, a leaf node is refused; otherwise
+    `Detail` is the state re-read afterwards (`now Expanded`).
+  - `set_value` acts through `RangeValuePattern` when the control has one: `value` must be a
+    finite number in invariant format (`.` as the decimal point); a read-only range is refused
+    before the value is looked at, and a non-number or an out-of-range number is refused naming
+    the provider's minimum and maximum (a NaN or inverted bound is treated as unknown and not
+    checked). Those are the provider's numbers: a Win32 trackbar's provider reports 0-100 percent
+    of its own range. `Detail` is the value read back — `now 30 (range 0 to 100)` — since a control
+    with a step snaps. Otherwise a writable `ValuePattern` takes `value` as text, verified by
+    reading before and after: `Detail` is `now '<value shown>'`, and a write the control accepted
+    but ignored (the value did not change) is refused — a WinForms slider and a drop-down list
+    given a non-item both do that. A password field is never read or echoed, and a value that
+    cannot be read back yields `replaced the whole value`. A provider's own rejection
+    (`ArgumentException`, or FlaUI's `Win32Exception` for `DISP_E_TYPEMISMATCH`) becomes a
+    caller-facing refusal naming the control. No focus call and no typing fallback (`type` is the
+    verb that falls back to the keyboard); UIA's Win32 proxies may still bring the control's window
+    forward on their own — observed on an EDIT, a trackbar and a TreeView node, and the description
+    says so.
+  - `scroll_into_view` acts through `ScrollItemPattern` and reports `now on screen, centre (x,y)` or
+    `the control still reports offscreen`. Most providers do not offer the pattern: an element
+    that is already on screen (not offscreen, bounds with area) is then a success with `Method`
+    `None` and `already on screen, centre (x,y)`; otherwise the refusal names the nearest ancestor
+    that really scrolls (`ScrollPattern` **and** a scrollable axis, the snapshot's rule, up to 25
+    levels up the control view) by a freshly issued `el_N` id to pass to `scroll`, or points at
+    `find_element` with `kind:scrollable` when there is none. It is the one verb allowed on a
+    control that reports disabled, since it moves only the view. A timeout during the ancestor
+    walk propagates untouched (R23).
+  `expand`, `collapse` and `scroll_into_view` take no value — `""` counts as none, anything else is
+  refused; `set_value` without one is refused. The unknown-action error lists all ten verbs. The
+  existing six are unchanged. Logic in `Services/UIAutomationService.cs` (`InteractOnSta`,
+  `SetRangeValue`, `SetTextValue`, `SetOrRejected`, `NoScrollItem`, `NearestScrollableAncestor`);
+  the `interact_element` description and its `action`/`value` parameter descriptions are
+  rewritten in `Tools/UIAutomationTools.cs`. No tool added (still 69), no new service. Tests:
+  `UIAutomationServiceInteractVerbsTests` (unit, fake elements),
+  `UIAutomationServiceInteractVerbsIntegrationTests` and
+  `UIAutomationServiceInteractVerbsRealPatternTests` (Integration, on real Win32 controls this
+  process owns — a trackbar, EDITs, a password EDIT, a list box, a combo box and a TreeView in the
+  new `Fixtures/OwnedPatternControlsWindow.cs` — with a strict input mock), plus rows in
+  `UIAutomationServiceRefusingTests`, `UIAutomationToolsTests`, `ElementTargetTests` and
+  `InputToolsClickTests`. Neighbour gaps found and not fixed are parity items D-23 … D-27.
 - **Every client is told how to drive the server when it connects** (E-1). The `initialize`
   result now carries `instructions` — `McpServerOptions.ServerInstructions`, set in
   `WindowsMcpHost.AddWindowsMcp`, so stdio and HTTP send the same text — a 16-line condensation of
@@ -493,6 +538,19 @@
 
 ### Changed
 
+- **The off-screen refusal names `scroll_into_view`, and refusals quote at most 80 characters of a
+  name** (E-2). An element-targeted `click`, `type`, `scroll`, `drag`, `multi_select` or
+  `multi_edit` on an element that reports offscreen read `… is off-screen: scroll it into view or
+  focus its window, then take a new snapshot.`; it now reads `Element el_N ('<name>') is
+  off-screen: bring it into view with interact_element scroll_into_view (or scroll its container,
+  or focus its window), then take a new snapshot.` (`Services/UiTree/ElementTarget.cs`). That
+  refusal, its two siblings (no bounds, empty bounds), the `interact_element` refusals built by
+  `UIAutomationService.Describe` (disabled, read-only, leaf node, value rejected or ignored, out of
+  range, no `ScrollItemPattern`) and the values the new `set_value` refusals echo quote at most 80
+  characters, then `...` (never splitting a surrogate pair), through the new `UiRefusals.Clip` —
+  so a list row whose name is its whole text cannot push what to do next past the 2 000-character
+  cap on error messages. The "`<Pattern>` not supported on …" refusal, the D-10 translations and
+  `select`'s "No item named …" still quote in full (parity D-27).
 - **`get_element` answers under the id it was given, and a dead element id says why** (parity D-11
   — a contract change). `get_element("el_12")` returned the element under a freshly minted id; it
   now returns `ElementId: "el_12"`, and so does every element-targeted
