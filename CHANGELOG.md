@@ -2,6 +2,36 @@
 
 ### Added
 
+- **`click` holds modifiers; `key` repeats and holds** (E-3). Two parameters on existing tools, so
+  a Shift-click range select is one call and ten Down arrows are one call:
+  - `click(modifiers:…)` takes `ctrl` (alias `control`), `shift` and `alt` joined with `+`, in any
+    case or order; duplicates collapse. Anything else — `win` included, on purpose: a Win key
+    released on its own opens Start — and a modifier with `clicks:0` are refused before the target
+    is resolved, so nothing moves and no key goes down. With modifiers the pointer is moved to the
+    target first, so a point off every monitor is refused before any key is pressed; then the keys
+    go down in the order ctrl, shift, alt, one click is sent, and they come up in reverse. They are
+    always released: after a failed click, on cancellation (the releases use a non-cancellable
+    token), and for a key whose own key-down threw. A failed release is retried once; if it fails
+    again after the click was sent, the error says the click was sent and names the keys that may
+    still be down, so the caller does not repeat it. The result JSON gains `modifiers` (the
+    canonical `ctrl+shift` form, or `null`); a plain click is otherwise unchanged.
+  - `key(repeat:N)` presses the key 1-100 times, 5 ms apart, and returns `pressed <key> N times`;
+    a press that fails after at least one landed reports `pressed i of N times`, so a retry does
+    not resend them all. `key(hold_ms:M)` (0-10000) sends key-down, waits, key-up — held, not
+    auto-repeated — with the same release guarantee, and returns `held <key> for M ms`. The two
+    cannot be combined. For either, the key is resolved before any press; every name that maps to
+    ctrl, shift, alt or win (left/right variants included) is refused — a held modifier is the
+    free-standing key-down this server does not offer, and repeating one can trigger Sticky Keys —
+    and a held key must need no implied modifier on the active layout. Letters are not
+    case-sensitive. Plain `key("x")` is unchanged.
+  Both tools now take the request's cancellation token (not part of the schema). Logic in
+  `Tools/InputTools.cs` (`ParseModifiers`, `IsModifier`, `HoldingAsync`, `RepeatPace`, and a
+  `Delay` seam so the tests do not sleep) over B-7's existing `IInputService.KeyDownAsync` /
+  `KeyUpAsync`; the `click` and `key` descriptions are rewritten. No tool added (still 69), no new
+  service, no `IInputService` change. Tests: `InputToolsClickModifiersTests` and
+  `InputToolsKeyRepeatHoldTests` (unit, a recording `IInputService`). Not verified live: a real
+  Shift-click range select and `key("down", repeat:10)` (the `UIAutomation` category was not run).
+  Gaps found by review and not fixed are parity items D-28 … D-32.
 - **`interact_element` expands, collapses, sets a value and scrolls into view** (E-2). Four verbs
   join the six (now `click|invoke|toggle|select|focus|type|expand|collapse|set_value|
   scroll_into_view`), each in one call with no pointer movement or keystroke:

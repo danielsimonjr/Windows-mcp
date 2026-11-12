@@ -125,12 +125,15 @@ public sealed class InputTools
 
     // C-7: every tool names all five annotation arguments, even where the value is the SDK default
     [McpServerTool(Title = "Click", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false),
-     Description("Click at a point or on a snapshot element. Give x and y (physical virtual-desktop pixels …) or element_id (an el_N id from snapshot/find_element …). clicks: 1 single, 2 double, 3 triple, 0 = hover only. Returns {action: click|hover, x, y, button, clicks, elementId?, name?}.")]
+     Description("Click at a point or on a snapshot element. Give x and y (physical virtual-desktop pixels …) or element_id (an el_N id from snapshot/find_element …). clicks: 1 single, 2 double, 3 triple, 0 = hover only. modifiers holds ctrl, shift and/or alt for the click … Returns {action: click|hover, x, y, button, clicks, elementId?, name?, modifiers?}.")]
     public async Task<string> Click(int? x = null, int? y = null, string? element_id = null,
-                                    string button = "left", int clicks = 1)
+                                    string button = "left", int clicks = 1,
+                                    string? modifiers = null, CancellationToken ct = default)
     {
+        var held = ParseModifiers(modifiers);   // E-3: refused before the target is resolved
         var target = await ResolveTargetAsync(x, y, element_id, allowCursor: false);
-        // … HoverAsync when clicks == 0, else ClickAsync at target.X/target.Y
+        // … HoverAsync when clicks == 0, else ClickAsync at target.X/target.Y —
+        //   with modifiers: HoverAsync, then HoldingAsync(held, ClickAsync) releases them in reverse
     }
 }
 ```
@@ -184,7 +187,7 @@ public interface IInputService
     Task PressShortcutAsync(string shortcut);
     Task ScrollAsync(int x, int y, string direction, int amount);
     Task ScrollAsync(int x, int y, string direction, int amount, bool shiftWheel);   // B-3
-    Task KeyDownAsync(string key);                                  // B-7: hold a modifier
+    Task KeyDownAsync(string key);                                  // B-7: hold a modifier (E-3: click modifiers, key hold_ms)
     Task KeyUpAsync(string key);                                    // B-7: release it
     Task<CursorPosition> GetCursorPositionAsync();
 }

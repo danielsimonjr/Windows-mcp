@@ -7,19 +7,19 @@
 [Unreleased]` carries the section-A phase-1 work (A-7, A-8, A-9, A-11, A-13), phase 2's A-1,
 phase 3's A-2/A-3/A-4, phase 4's A-6 and phase 5's A-14, A-12 (phase 1), A-10 and A-5 (phase 1),
 then all of section B and all of section C (C-7, C-4, C-2, C-3, C-1, C-6, C-5), D-10/D-11, S-11,
-E-1 and E-2.
+E-1, E-2 and E-3.
 SDK `ModelContextProtocol` 2.2.0.
 **Status:** Living document — check items off as they ship.
 
-This is the working list of everything upstream can do that this server cannot (plus twenty-seven
+This is the working list of everything upstream can do that this server cannot (plus thirty-two
 defects: D-1…D-4 from the original comparison, D-5…D-9 added later under rule 4 and D-10/D-11
 logged 2026-11-10 — **all eleven are now fixed** — then D-12…D-18, logged 2026-11-11 by the
-D-10/D-11 review, D-19…D-22, logged 2026-11-12 during E-1, and D-23…D-27, logged 2026-11-12
-during E-2, all still open; section A's phase 1 — A-7, A-9, A-8, A-11 and A-13 — is done, phase 2 shipped A-1,
+D-10/D-11 review, D-19…D-22, logged 2026-11-12 during E-1, D-23…D-27, logged 2026-11-12
+during E-2, and D-28…D-32, logged 2026-11-12 by the E-3 review, all still open; section A's phase 1 — A-7, A-9, A-8, A-11 and A-13 — is done, phase 2 shipped A-1,
 phase 3 shipped A-2 with A-3 and A-4 inside it, phase 4 shipped A-6, and phase 5 shipped A-14,
 A-12 phase 1, A-10 and A-5 phase 1 — so every section-A row is ticked, with only A-5's Firefox
 phase left open and A-12's phase 2 deliberately not planned; section B is ticked too, and
-C-5/C-6 close section C — section S, D-12…D-27 and section E are the work that is left; section E
+C-5/C-6 close section C — section S, D-12…D-32 and section E are the work that is left; section E
 is not upstream parity but an agent-efficiency backlog from a review of this server's own tools).
 Each item carries enough context to write a design note and an implementation plan without re-reading
 upstream from scratch: what upstream does and where, what we do today and where, an
@@ -135,9 +135,14 @@ function names are the stable anchor.
 | D-25 | A Win32 child clipped out of its parent, or never shown, reads as on screen (`scroll_into_view`, `click` by element) | P2 | S–M | E-2 | ☐ |
 | D-26 | `MissingPattern` / `Refusing` re-probe liveness after a pattern lookup timed out on a hung provider | P3 | S | D-10 | ☐ |
 | D-27 | The pattern-not-supported, D-10-translated and `select` no-item refusals quote a name or value unclipped | P3 | S | E-2 | ☐ |
+| D-28 | Nothing serialises overlapping input-driving calls: one call's key-up can release a modifier another still holds | P2 | M | E-3 | ☐ |
+| D-29 | The takeover hotkey does not interrupt a `key` hold/repeat, a long `type` or a `drag` in progress | P2 | M | S-11, E-3 | ☐ |
+| D-30 | A key held by `key(hold_ms)` is not released when the host stops mid-hold | P3 | S | E-3 | ☐ |
+| D-31 | Cancellation between two modifier key-downs sends a key-up for a modifier that never went down | P3 | S | E-3 | ☐ |
+| D-32 | `click`'s `modifiers` vocabulary (ctrl\|shift\|alt) is narrower than `shortcut`'s | P3 | S | E-3 | ☐ |
 | E-1 | Server instructions in the MCP handshake | P1 | S | — | ☑ |
 | E-2 | `interact_element`: expand, collapse, set_value, scroll_into_view | P1 | S | D-10 | ☑ |
-| E-3 | `click` modifiers; `key` repeat and hold | P2 | S | — | ☐ |
+| E-3 | `click` modifiers; `key` repeat and hold | P2 | S | — | ☑ |
 | E-4 | `find_element` filters: automation id, control type, class, within, paging | P2 | M | — | ☐ |
 | E-5 | `observe`: action tools return the state they produced | P1 | M | D-11 | ☐ |
 | E-6 | `sequence`: an ordered batch of UI steps in one call | P2 | M | E-5, S-11 | ☐ |
@@ -148,8 +153,8 @@ function names are the stable anchor.
 | E-11 | Stable element ids and a snapshot diff | P3 | L | E-5, D-11 | ☐ |
 
 **Suggested order.** **Defects D-1 … D-11 are done** (D-12 … D-18, logged 2026-11-11 by the
-D-10/D-11 review, D-19 … D-22, logged 2026-11-12 during E-1, and D-23 … D-27, logged 2026-11-12
-during E-2, are open), and **so are sections
+D-10/D-11 review, D-19 … D-22, logged 2026-11-12 during E-1, D-23 … D-27, logged 2026-11-12
+during E-2, and D-28 … D-32, logged 2026-11-12 by the E-3 review, are open), and **so are sections
 A, B and C** (A-5's Firefox phase and
 D-2's `interact_element(type) clear` are the open sub-items; A-12's phase 2 is not planned). What
 is left of the parity work is section S: S-11 (the control indicator) is done (PR #32); the quick wins S-8 and S-1 can be interleaved anywhere; S-4 last.
@@ -163,9 +168,9 @@ opt-in sampling and the annotation table, per-item test seeds) is in
 
 **Section E (added 2026-11-10) is not upstream parity.** It comes from a review of this server's
 own tool surface for how many round trips and tokens an AI client spends driving it, and the same
-review logged D-10 and D-11 (both done 2026-11-11, so E-2 and E-5 are unblocked). E-1 and E-2
-are done (2026-11-12). Order for the rest:
-E-3, E-4, E-5, E-6, E-7, E-8, E-9, E-10. E-11 is last and conditional: measure the snapshot
+review logged D-10 and D-11 (both done 2026-11-11, so E-2 and E-5 are unblocked). E-1, E-2 and
+E-3 are done (2026-11-12). Order for the rest:
+E-4, E-5, E-6, E-7, E-8, E-9, E-10. E-11 is last and conditional: measure the snapshot
 cost after E-5 before committing to it. `todo.md` still records every UI-automation tool as never
 verified live — that sweep outranks any E item that builds on those tools.
 
@@ -938,6 +943,135 @@ site.
 remedy; `select` with a 200-character value likewise.
 
 **Done when.** No UI refusal quotes more than 80 characters of a name or a caller's value.
+
+### D-28 — Overlapping input-driving calls are not serialised  `P2 · M`
+- [ ] Not started
+
+**Found by the E-3 review (2026-11-12), read from the source; pre-existing since B-3/B-7, widened
+by E-3.**
+
+**Ours today.** Nothing orders two input-driving calls that run at once (HTTP clients can overlap,
+and S-11's indicator refcounts them for exactly that reason). Every key is one desktop-wide state,
+so one call can release a modifier another still holds, or have its keystrokes modified by another
+call's hold: `click(modifiers:…)` (E-3), `multi_select`'s Ctrl across a batch (B-7),
+`scroll(shift_wheel:true)`'s Shift (B-3), and `key(hold_ms:…)` against a concurrent `type` or
+`shortcut`. For example, a `click(modifiers:"shift")` that overlaps a `multi_select` makes the
+batch's clicks Ctrl+Shift-clicks while it holds Shift; a `click(modifiers:"ctrl")` that ends during
+the batch releases the Ctrl the batch still relies on; and a `type` that runs during a
+`key(hold_ms:…)` types with that key logically down.
+
+**Sketch.** One process-wide input gate (a `SemaphoreSlim(1,1)`) taken by every tool in
+`Hosting/DrivingTools.Names` that injects input — or at least by every call that holds a key —
+for the length of the call, with the request's token on the wait. Decide whether a queued call
+waits or is refused while another holds keys.
+
+**Touches.** `Tools/InputTools.cs` (`Click`, `Key`, `Scroll`, `MultiSelect`, `Type`, `Shortcut`,
+`Drag`), possibly `Hosting/WindowsMcpHost.cs` (the call-tool filter that already brackets driving
+tools), `tests/.../Tools/`.
+
+**Tests.** Two overlapping calls on a recording `IInputService` whose `KeyDownAsync` blocks on a
+gate: the second call's first event comes after the first call's last key-up; a cancelled waiter
+sends nothing.
+
+**Done when.** No input event of one call lands between another call's key-down and key-up.
+
+### D-29 — The takeover hotkey does not stop input already in progress  `P2 · M`
+- [ ] Not started
+
+**Found by the E-3 review (2026-11-12), read from the source; S-11 is indicator-only by design.**
+
+**Ours today.** The S-11 takeover hotkey only records the takeover; the note rides on the next
+result. A call already running carries on: a `key(hold_ms:10000)` keeps the key down, a
+`key(repeat:100)` keeps pressing, and a long `type` or a slow `drag` keeps moving, while the person
+at the machine is trying to take over. The hotkey is registered with `MOD_NOREPEAT`
+(`ControlIndicator`, `ModNoRepeat`), so a person who presses it while the server holds the
+hotkey's own trigger key may not get a `WM_HOTKEY` at all — **unverified**.
+
+**Sketch.** Give the indicator a takeover `CancellationToken` that the in-flight driving calls
+link into their own token, so a takeover cancels them (E-3's release guarantee then lets go of
+any held key). Refuse to hold or repeat the configured hotkey's trigger key.
+
+**Touches.** `Services/ControlIndicator.cs`, `Hosting/WindowsMcpHost.cs` (the call-tool filter),
+`Tools/InputTools.cs`, `docs/design/S-11-control-indicator.md`.
+
+**Tests.** A simulated takeover during a `key(hold_ms)` on a recording `IInputService` releases
+the key early and the result says why; a takeover during `repeat` stops the presses. One live
+check (UIAutomation) that the hotkey fires while a held key is down.
+
+**Done when.** Pressing the takeover hotkey ends any hold, repeat, type or drag within one pace
+step.
+
+### D-30 — A held key is not released when the host stops mid-hold  `P3 · S`
+- [ ] Not started
+
+**Found by the E-3 review (2026-11-12), read from the source.**
+
+**Ours today.** `key(hold_ms:…)` releases its key in `InputTools.HoldingAsync`, which runs only if
+the process does. A host shut down, or a process killed, mid-hold leaves the (non-modifier) key
+logically down for the whole desktop until something sends its key-up; nothing tracks which keys
+the server holds, so the host's stop path cannot release them. (E-3 refuses modifiers for exactly
+this reason.) A hard kill cannot be covered, but a graceful stop (the host's
+`ApplicationStopping`) can.
+
+**Sketch.** A small held-keys registry (`HoldingAsync` adds and removes) whose
+`IHostApplicationLifetime.ApplicationStopping` callback sends a key-up for each key still listed.
+
+**Touches.** `Tools/InputTools.cs` (`HoldingAsync`), `Hosting/WindowsMcpHost.cs`, a new tracker
+type, `tests/.../Tools/InputToolsKeyRepeatHoldTests.cs`.
+
+**Tests.** A hold in progress when the lifetime signals stopping: the key-up is sent once, and not
+a second time when the hold then ends.
+
+**Done when.** A graceful stop never leaves a key the server pressed down.
+
+### D-31 — Cancellation between two key-downs releases a modifier that never went down  `P3 · S`
+- [ ] Not started
+
+**Found by the E-3 review (2026-11-12), read from the source.**
+
+**Ours today.** `HoldingAsync` adds a key to its `sent` list *before* calling
+`KeyDownAsync(key, ct)` so that a key-down that throws half-way is still released. When the
+request is cancelled between two key-downs, the next `KeyDownAsync` throws on the token before it
+sends anything, yet that key is in `sent` and gets a key-up. If the person at the machine is
+physically holding that modifier, the synthetic key-up releases it under them.
+
+**Sketch.** Check the token before adding the key (or pass `CancellationToken.None` to the
+key-downs and check `ct` between them), so only a key whose key-down was attempted is released;
+keep the release for a key-down that threw for any other reason.
+
+**Touches.** `Tools/InputTools.cs` (`HoldingAsync`),
+`tests/.../Tools/InputToolsClickModifiersTests.cs`.
+
+**Tests.** `modifiers:"ctrl+shift"` with the token cancelled after the Ctrl key-down: Ctrl is
+released, Shift is never sent a key-up; a Shift key-down that throws a non-cancellation exception
+is still released.
+
+**Done when.** No key-up is sent for a key whose key-down was never attempted.
+
+### D-32 — `click`'s modifier names are narrower than `shortcut`'s  `P3 · S`
+- [ ] Not started
+
+**Found by the E-3 review (2026-11-12), read from the source.**
+
+**Ours today.** `click(modifiers:…)` accepts `ctrl`, `control`, `shift` and `alt` only
+(`InputTools.ParseModifiers`). `shortcut` and `key` go through `ShortcutParser`, which also takes
+`lctrl`/`rctrl`, `lshift`/`rshift`, `lalt`/`ralt` and `option`. A caller who learned the names from
+`shortcut` gets `Unknown modifier 'option'` from `click`. (`win` is refused on purpose — E-3's
+note — and stays refused.)
+
+**Sketch.** Resolve each part through `ShortcutParser.ResolveKey` and map the result onto
+ctrl/shift/alt (keeping the left/right key if the caller named one), refusing anything that is
+not one of those three; or state the narrower vocabulary in the refusal and the description and
+leave it.
+
+**Touches.** `Tools/InputTools.cs` (`ParseModifiers`, the `click` description),
+`tests/.../Tools/InputToolsClickModifiersTests.cs`.
+
+**Tests.** `option`, `lctrl` and `rshift` are accepted (or refused naming the accepted set); `win`
+and `lwin` stay refused.
+
+**Done when.** Every modifier name `shortcut` accepts for ctrl, shift or alt is either accepted by
+`click` or refused with a message that lists what is.
 
 ---
 
@@ -1886,7 +2020,7 @@ plus rows in `UIAutomationServiceRefusingTests`, `UIAutomationToolsTests`, `Elem
 `InputToolsClickTests`. Neighbour gaps found and not fixed are D-23 … D-27.
 
 ### E-3 — `click` modifiers; `key` repeat and hold  `P2 · S`
-- [ ] Not started
+- [x] Done 2026-11-12 — in `CHANGELOG.md [Unreleased]`, ships with the next release (not verified live)
 
 **Ours today.** `click` takes a button and a click count and no modifiers; Ctrl-click exists only
 inside `multi_select`, and Shift-click (range select) and Alt-click nowhere. `key` presses one key
@@ -1906,6 +2040,33 @@ failed click and on cancellation; `repeat` and `hold_ms` bounds; an unknown modi
 before any input is sent.
 
 **Done when.** Shift-click selects a range and `key("down", repeat:10)` is one call.
+
+**As landed:** all in `Tools/InputTools.cs`; `Services/InputService.cs` and `IInputService` are
+unchanged (B-7's `KeyDownAsync`/`KeyUpAsync` carry the holds). `click(modifiers:…)` is parsed by
+`ParseModifiers` — `ctrl` (alias `control`), `shift`, `alt`, joined with `+`, any case or order,
+duplicates collapse — **before** the target is resolved, so anything else (`win` deliberately: a
+Win key released alone opens Start), an empty part, or a modifier with `clicks:0` is refused with
+nothing sent. Beyond the sketch: with modifiers the pointer is moved to the target first
+(`HoverAsync`), so a point off every monitor is refused before a bare Alt or Shift tap; the keys go
+down in the fixed order ctrl, shift, alt whatever order the caller wrote. `HoldingAsync` replaces
+the sketch's plain `finally`: every key sent a key-down — including one whose key-down threw — is
+released in reverse on `CancellationToken.None`, a failed release is retried once, a failure of the
+click wins unchanged, and a release that fails twice after a sent click becomes an
+`InvalidOperationException` saying the click was sent and naming the keys that may still be down.
+The result gains `modifiers` (canonical `ctrl+shift`, or `null`). `key(repeat:N)` (1-100) presses
+5 ms apart (`RepeatPace`, the pace `type` defaults to) and returns `pressed <key> N times`; a press
+that fails after at least one landed reports `pressed i of N times`. `key(hold_ms:M)` (0-10000) is
+key-down, `Delay`, key-up through `HoldingAsync` and returns `held <key> for M ms`. The two cannot
+be combined; for either, the key is resolved through `ShortcutParser.ResolveKey` before any press,
+every name the parser maps to ctrl, shift, alt or win (left/right variants included, `IsModifier`)
+is refused — a held modifier is the free-standing key-down this item excluded, and repeating one
+can trigger Sticky Keys — and a held key must need no implied modifier on the active layout
+(letters are case-insensitive). Both tools now take the request's cancellation token. Tests:
+`InputToolsClickModifiersTests` and `InputToolsKeyRepeatHoldTests` (Unit, a recording
+`IInputService`; the `Delay` seam keeps them from sleeping). **The "done when" bar is met by the
+unit tests only:** a real Shift-click range select and `key("down", repeat:10)` on a live desktop
+were not run (they are e2e rows CLICK-08 and KEY-08). Neighbour gaps found by the review and not
+fixed are D-28 … D-32.
 
 ### E-4 — `find_element` filters: automation id, control type, class, within, paging  `P2 · M`
 - [ ] Not started
