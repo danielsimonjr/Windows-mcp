@@ -445,6 +445,9 @@ Virtual-screen constants for this machine (§4.2): `minX −2560`, `maxX 2559`, 
 | CLICK-05 | T2 | L | Display 0: `{"x":-1280,"y":720,"clicks":0}`; `{"x":-2559,"y":1,"clicks":0}` | Both succeed with the negative coordinates echoed (D-3 "every monitor centre reached exactly"). | hover home |
 | CLICK-06 | T2 | L | `{"x":-3560,"y":-1000,"clicks":0}`; `{"x":2560,"y":720,"clicks":0}` | `(-3560,-1000) is not on any monitor: the cursor landed at (…). The virtual screen spans x -2560..2559, y 0..1439 in physical pixels with the origin at the primary monitor's top-left; see multi_monitor for each monitor's bounds.`; `x:2560` (one past the edge) refused the same way. | hover home |
 | CLICK-07 | T2 | L | `clicks:4` on empty desktop area of display 0 | Accepted (no upper cap) — record; S4 candidate. | — |
+| CLICK-08 | T2 | L | E-3. A run-owned list with five rows: click row 1, then `{"element_id":<row 4>,"modifiers":"shift"}`; then `{"element_id":<row 5>,"modifiers":"Control"}` | Rows 1–4 selected (range), then row 5 added; results carry `modifiers:"shift"` and `modifiers:"ctrl"`; a plain `click` carries `modifiers:null`. Afterwards `key a` in the editor types a lower-case `a` (no Shift or Ctrl left down). | clear selection |
+| CLICK-09 | T0 | L | `modifiers:"win"`; `modifiers:"ctrl+"`; `modifiers:"hyper"`; `{"clicks":0,"modifiers":"shift"}` — each with a valid target | `Unknown modifier 'win'; expected ctrl\|shift\|alt joined with '+', e.g. ctrl+shift (win is not supported).`; `modifiers 'ctrl+' has an empty part; …`; `Unknown modifier 'hyper'; …`; `modifiers need a click: clicks 0 only moves the pointer, …`. No pointer movement and no key event for any of them. | — |
+| CLICK-10 | T2 | L | `{"x":-3560,"y":-1000,"modifiers":"alt"}` | The CLICK-06 off-monitor refusal, with no Alt tap (no menu-bar accelerator underlines appear in the foreground window). | hover home |
 
 #### type
 
@@ -470,6 +473,9 @@ Virtual-screen constants for this machine (§4.2): `minX −2560`, `maxX 2559`, 
 | KEY-05 | T2 | L | `{"key":"delete"}` with `owned:Notepad` focused and empty | `pressed delete`; `window active` unchanged (focus never moved). | — |
 | KEY-06 | T2 | L | `{"key":"A"}` and `{"key":"a"}` | Both accepted; the editor shows `A` and `a` (layout-independent letters). | clear |
 | KEY-07 | T2 | L | `{"key":"printscreen"}` | `pressed printscreen`; record whether the Snipping overlay opened; `key esc` if so. | `key esc` |
+| KEY-08 | T2 | L | E-3. Editor holding 12 lines, caret on line 1: `{"key":"down","repeat":10}` | `pressed down 10 times`; the caret is on line 11 (one call, the parity bar). | clear |
+| KEY-09 | T2 | L | `{"key":"x","hold_ms":1000}` in the editor | `held x for 1000 ms`; the editor shows one `x` (held, not auto-repeated). | clear |
+| KEY-10 | T0 | L | `repeat:0`; `repeat:101`; `hold_ms:-1`; `hold_ms:10001`; `{"repeat":2,"hold_ms":10}`; `{"key":"shift","hold_ms":100}`; `{"key":"lctrl","repeat":3}`; `{"key":"?","hold_ms":100}` (US layout); `{"key":"nope","repeat":2}` | `repeat must be between 1 and 100, got …`; `hold_ms must be between 0 and 10000, got …`; `repeat and hold_ms cannot be combined: …`; `Cannot hold 'shift': a modifier is only held around an action. …`; `Cannot repeat 'lctrl': … can trigger Sticky Keys. …`; `Cannot hold '?': on this keyboard layout it needs a modifier, …`; `Cannot press 'nope': Unknown key 'nope'. …`. Nothing is pressed for any of them. | — |
 | SHORTCUT-01 | T2 | L | `type "abc"`; `ctrl+a`; `ctrl+c`; `clipboard get` | `pressed ctrl+a`, `pressed ctrl+c`; clipboard holds `abc`. | restore clipboard |
 | SHORTCUT-02 | T2 | L | `ctrl+shift+s` on Notepad; `wait_for active_window "Save As"`; `esc` | The dialog appears and closes. | — |
 | SHORTCUT-03 | T2 | L | `ctrl+1`; `win` then `esc`; `CTRL + C` (case and spaces) | `pressed …` each; Start opens/closes; the spaced form behaves as `ctrl+c`. | — |

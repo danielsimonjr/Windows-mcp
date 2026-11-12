@@ -241,7 +241,9 @@ off-screen element, or one with no bounds, is refused with the reason instead of
 meaningless point — bring an off-screen one into view with `interact_element`
 `scroll_into_view`). Giving both, or half a coordinate pair, is an error. `scroll` with no target
 scrolls under the current cursor and `drag`'s origin defaults to it; each response says which of
-`point`/`element`/`cursor` was used and where. `click(clicks: 0)` hovers, `scroll(shift_wheel:
+`point`/`element`/`cursor` was used and where. `click(clicks: 0)` hovers,
+`click(modifiers: "shift")` (or `ctrl`, `alt`, `ctrl+shift`) holds those keys around the click —
+Shift-click for a range, Ctrl-click to add to a selection — and always releases them, `scroll(shift_wheel:
 true)` holds Shift and uses the vertical wheel for `left`/`right`, and `drag(duration_ms, steps)`
 presses, nudges past the system drag threshold, moves through interpolated points and releases —
 which is what file managers, canvases and browser drag-and-drop need to see.
@@ -249,7 +251,9 @@ which is what file managers, canvases and browser drag-and-drop need to see.
 click the target, `clear` (Ctrl+A, Backspace), place the caret (`start`/`end`), type, press
 Enter. Newlines are typed as Enter and tabs as Tab; text of 200+ characters with no other control
 characters goes through the clipboard as one paste and the previous clipboard text is put back
-(the result's `method` says `keys` or `paste`).
+(the result's `method` says `keys` or `paste`). `key(key, repeat: 10)` presses a key up to 100
+times in one call (ten Down arrows), and `key(key, hold_ms: 2000)` holds a non-modifier key down
+for up to 10 s and then releases it; the two cannot be combined.
 
 `multi_select(targets_json, ctrl?)` and `multi_edit(entries_json)` do a whole batch in one call.
 `targets_json` is a JSON array of `{x, y}` points or `{element_id}` objects (a JSON string holding

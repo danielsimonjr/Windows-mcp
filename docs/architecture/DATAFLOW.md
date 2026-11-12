@@ -246,12 +246,31 @@ Processing:
     └─► IMouseSimulator.RightButtonClick()      // SendInput(MOUSE_RIGHT_DOWN + MOUSE_RIGHT_UP) at the cursor
 
 Output: {"action":"click","x":800,"y":400,"button":"right","clicks":1,
-         "elementId":"el_12","name":"Save"}
+         "elementId":"el_12","name":"Save","modifiers":null}
 ```
 
 With `x`/`y` instead of the id the resolver returns the point unchanged and `elementId`/`name`
 are `null`; `scroll` and `drag`'s origin allow no target at all, which reads
 `IInputService.GetCursorPositionAsync()` and reports `cursor`.
+
+With `modifiers` (E-3, e.g. `"shift"` or `"ctrl+shift"`), `ParseModifiers` runs before
+`ResolveTargetAsync` — an unknown name, `win`, or a modifier with `clicks:0` is refused with no
+input sent — and the press becomes:
+
+```
+  HoverAsync(x, y, 0)                         // pointer first: an off-monitor point throws before any key
+  HoldingAsync([ctrl, shift, alt] ∩ asked):
+    ├─► KeyDownAsync("ctrl") … KeyDownAsync("alt")   // fixed order, whatever order the caller wrote
+    ├─► ClickAsync(x, y, button, clicks)
+    └─► KeyUpAsync in reverse, CancellationToken.None // also after a failed click or a cancellation,
+                                                      // and for a key whose key-down threw (not one
+                                                      // whose key-down was cancelled); one retry
+Output: {…, "modifiers":"ctrl+shift"}
+```
+
+A release that fails twice after the click was sent is an `InvalidOperationException` saying the
+click was sent and naming the keys that may still be down; a failure of the click itself is
+rethrown unchanged.
 
 ---
 
@@ -1022,11 +1041,12 @@ Scrollable (1):
 
 | Location | Behavior | Notes |
 |----------|----------|-------|
-| `WaitFor` | Polls immediately, then every `interval_ms` (default 500 ms, range 0-5000, 10 ms floor) up to `timeout_ms` (default 10 s, range 0-120000); the sleep is clamped to the remaining budget | Only tool with a loop; a failed poll is retried, and a timeout — every-poll-failed included — is a `WaitForResult` with `Satisfied:false`, never a throw (roadmap C4) |
+| `WaitFor` | Polls immediately, then every `interval_ms` (default 500 ms, range 0-5000, 10 ms floor) up to `timeout_ms` (default 10 s, range 0-120000); the sleep is clamped to the remaining budget | Only tool with a polling loop; a failed poll is retried, and a timeout — every-poll-failed included — is a `WaitForResult` with `Satisfied:false`, never a throw (roadmap C4) |
 | `InputService` clicks | No delays: clicks are back-to-back `SendInput`; the cursor is placed with `SetCursorPos` and read back before any button event | A clamped (off-monitor) point throws rather than clicking elsewhere |
 | `InputService.TypeAsync` | `TypeOptions.PaceMs` (default 5 ms) between the steps of a typing plan, never after the last one; a paste waits 150 ms after `ctrl+v` before restoring the previous clipboard text | The settle only runs on the real simulator sink, so the unit tests do not pay it. The target reads the clipboard on its own schedule, which is what the settle covers |
 | `InputService.DragAsync(…, durationMs, steps)` | `durationMs / steps` between the interpolated moves (default 300 ms / 20 = 15 ms), including after the last one; `durationMs:0` moves without pausing | A drop target needs real motion, not a teleport; the button is released in a `finally`, so a cancelled drag never leaves it down |
 | `wait` (`InputTools`) | The only tool whose *job* is a delay: one `Task.Delay(seconds)` on the request's cancellation token, `seconds` in (0, 60] | Validated in the tool before the delay; outside the range is an `ArgumentException` naming it and pointing at `wait_for`. No process is spawned — it replaces `powershell("Start-Sleep")`, which paid a cold start and took the serialization gate |
+| `key` (`InputTools`, E-3) | `repeat:N` waits `RepeatPace` (5 ms) between presses, never after the last; `hold_ms:M` (0–10000) is one key-down, a `Delay` of M ms on the request's token, one key-up | Both delays go through the internal `InputTools.Delay` seam so the unit tests do not sleep. A cancelled hold still releases the key (on a non-cancellable token); a held key is not auto-repeated |
 | `launch`'s window wait | `LaunchWait.ForWindowAsync` reads the inventory immediately, then every 250 ms until `timeout_ms` (default 10 000, max 60 000); the last sleep is clamped to the remaining budget | A timeout is `WindowDetected:false` with the pid, never an exception — a packaged app or a browser may hand its window to another process |
 | `AppCatalogService` | The catalog is read from the Start Menu and the package manager at most once per 5 minutes; a resolve miss forces one extra refresh | Enumerating a few hundred packages costs ~1 s cold, which is why it is cached rather than read per `launch` |
 | `ProcessService.ListAsync(ProcessListOptions)` | One 250 ms window (`CpuSampleWindow`) between the two `TotalProcessorTime` readings of every plain `process(list)` | Each reading is timestamped per process, so a walk of a few hundred processes does not over-credit the ones read first. `orphans`, `includeLineage`, `groupByRoot` and the `ListAsync(nameFilter)` overload do not sample and pay nothing; the delay is injected, so the unit tests do not pay it either |
