@@ -25,6 +25,19 @@ public class NetworkToolsTests
         mockNetwork.Verify(s => s.PingAsync("example.com", It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    /// <summary>E-1: the second gated firewall action - "Some changes are refused without confirm: true".</summary>
+    [Fact]
+    public async Task Firewall_remove_requires_confirm()
+    {
+        var mockFirewall = new Mock<IFirewallService>();
+        var tools = new NetworkTools(new Mock<INetworkService>().Object, mockFirewall.Object);
+
+        Func<Task> act = () => tools.Firewall(action: "remove", name: "TestRule", confirm: false);
+
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*confirm*");
+        mockFirewall.VerifyNoOtherCalls();
+    }
+
     [Fact]
     public async Task Firewall_add_requires_confirm()
     {

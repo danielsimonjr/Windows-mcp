@@ -126,6 +126,9 @@ internal static class WindowsMcpHost
             .AddMcpServer(o =>
             {
                 o.ServerInfo = new() { Name = "Windows-mcp", Version = Program.ServerVersion };
+                // E-1: the driving loop and safety rails, sent in the initialize result on both
+                // transports, so a client that never saw the skill still gets them.
+                o.ServerInstructions = ServerInstructions.Text;
             })
             // Surface our deliberate refusals verbatim. Without this the SDK flattens every
             // non-McpException to "An error occurred invoking '<tool>'.", so the PID-reuse guard

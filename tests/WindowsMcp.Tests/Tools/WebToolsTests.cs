@@ -252,6 +252,25 @@ public class WebToolsTests
         web.Verify(s => s.ScrapeAsync("https://example.test/", 100000, It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    /// <summary>
+    /// E-1 (review R-F4): the instructions name <c>scrape</c> with source dom as a call that
+    /// replaces snapshot ids, so source http must not: a successful fetch never touches UIA or the
+    /// window inventory, and the caller's snapshot ids survive it.
+    /// </summary>
+    [Fact]
+    public async Task Scrape_http_never_walks_the_desktop()
+    {
+        var web = Web();
+        var uia = Uia();
+        var windows = Windows();
+
+        await Scrape(Tools(web, uia, windows), NoSampling(), url: "https://example.test/");
+
+        web.Verify(s => s.ScrapeAsync("https://example.test/", 100000, It.IsAny<CancellationToken>()), Times.Once);
+        uia.VerifyNoOtherCalls();
+        windows.VerifyNoOtherCalls();
+    }
+
     [Theory]
     [InlineData(1)]             // the low end of the range, exactly
     [InlineData(5000)]

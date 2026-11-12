@@ -377,6 +377,43 @@ public class WaitForServiceTests
             Times.AtLeast(2), "a wait that reads the inventory once is not a wait");
     }
 
+    // ---- E-1 (review R-F4): text and focus waits take a snapshot, which replaces the ids --------
+
+    /// <summary>
+    /// The server instructions say snapshot ids die at "`wait_for` on text or focus". Each such
+    /// poll goes through the service's own <c>SnapshotAsync</c>, which evicts the previous
+    /// snapshot's ids; its header reads the cursor and the monitor inventory exactly once, and no
+    /// other wait path reads either, so those two reads are the observable trace of the snapshot.
+    /// Desktop scope over an empty inventory walks no window, so no live desktop is needed.
+    /// (A direct proof - an id from an earlier snapshot no longer resolving - needs a real walked
+    /// window; see the design request in the E-1 report.)
+    /// </summary>
+    [Theory]
+    [InlineData(WaitCondition.TextExists)]
+    [InlineData(WaitCondition.FocusedElement)]
+    public async Task Text_and_focus_waits_take_a_snapshot_on_every_poll(WaitCondition condition)
+    {
+        var input = new Mock<IInputService>();
+        input.Setup(i => i.GetCursorPositionAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new CursorPosition(10, 10));
+        var windows = new Mock<IWindowService>();
+        windows.Setup(w => w.ListAsync(It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<WindowInfo>());
+        windows.Setup(w => w.EnumerateMonitorsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new MonitorInfo(0, "Monitor0", 0, 0, 1920, 1080, true)]);
+        using var svc = new UIAutomationService(input.Object, windows.Object);
+
+        var result = await svc.WaitForAsync(new WaitRequest(
+            condition, "wmcp-e1-" + Guid.NewGuid().ToString("N"), TimeoutMs: 0, Scope: FindScope.Desktop));
+
+        result.Satisfied.Should().BeFalse();
+        result.Attempts.Should().Be(1, "timeout 0 is one poll");
+        result.Detail.Should().NotStartWith("every poll failed", "the snapshot was taken and judged");
+        input.Verify(i => i.GetCursorPositionAsync(It.IsAny<CancellationToken>()), Times.Once,
+            "one poll is one snapshot, and a snapshot's header reads the cursor");
+        windows.Verify(w => w.EnumerateMonitorsAsync(It.IsAny<CancellationToken>()), Times.Once,
+            "and the monitor inventory");
+    }
+
     // ---- argument rules, decided before any poll ----------------------------------------------
 
     private static UIAutomationService NewService() =>
@@ -503,6 +540,32 @@ public class WaitForFindPathIntegrationTests
         result.Detail.Should().StartWith("every poll failed:",
             "a wait that never managed to look must not answer 'not found' (D-5)");
         result.Attempts.Should().BeGreaterThanOrEqualTo(2);
+    }
+
+    /// <summary>
+    /// E-1 (review R-F4): the converse of WaitForServiceTests.Text_and_focus_waits_take_a_snapshot_on_every_poll.
+    /// The instructions do not list element_exists or element_enabled as evicting snapshot ids, so
+    /// their polls must run the find path and never <c>SnapshotAsync</c> - whose header would read
+    /// the cursor and the monitors. Integration only because the find path reads the live
+    /// top-level window list (read-only; the window title cannot exist, so nothing is walked).
+    /// </summary>
+    [Theory]
+    [InlineData(WaitCondition.ElementExists)]
+    [InlineData(WaitCondition.ElementEnabled)]
+    public async Task Element_waits_never_take_a_snapshot(WaitCondition condition)
+    {
+        var input = new Mock<IInputService>();
+        var windows = new Mock<IWindowService>();
+        using var svc = new UIAutomationService(input.Object, windows.Object);
+
+        var result = await svc.WaitForAsync(new WaitRequest(
+            condition, "Save", TimeoutMs: 0, Scope: FindScope.Window, WindowTitle: MissingWindowTitle()));
+
+        result.Detail.Should().Contain("No top-level window matching", "the poll ran the find path");
+        input.Verify(i => i.GetCursorPositionAsync(It.IsAny<CancellationToken>()), Times.Never,
+            "no snapshot header was read, so no snapshot was taken and the caller's ids survive");
+        windows.Verify(w => w.EnumerateMonitorsAsync(It.IsAny<CancellationToken>()), Times.Never);
+        windows.Verify(w => w.ListAsync(It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

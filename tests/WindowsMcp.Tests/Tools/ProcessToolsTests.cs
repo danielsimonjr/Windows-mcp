@@ -53,6 +53,19 @@ public class ProcessToolsTests
         mock.Verify(s => s.StopAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    /// <summary>E-1: restart is gated like stop - "Some changes are refused without confirm: true".</summary>
+    [Fact]
+    public async Task Service_restart_requires_confirm_true()
+    {
+        var mock = new Mock<IServiceControlService>();
+        var tools = MakeTools(service: mock.Object);
+
+        Func<Task> act = () => tools.Service("restart", name: "Spooler", confirm: false);
+
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*confirm*");
+        mock.VerifyNoOtherCalls();
+    }
+
     [Fact]
     public async Task ScheduledTask_delete_requires_confirm_true()
     {
