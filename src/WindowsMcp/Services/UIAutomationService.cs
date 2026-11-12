@@ -948,7 +948,9 @@ public sealed class UIAutomationService : IUIAutomationService
     private static bool ReportsDisabled(AutomationElement el)
     {
         try { return el.Properties.IsEnabled.TryGetValue(out var enabled) && !enabled; }
-        catch (Exception ex) when (ex is not OperationCanceledException) { return false; }
+        // A timeout propagates like a cancellation: the provider is hung, and letting the verb
+        // run would spend the UIA timeout again on the one STA thread every element tool shares.
+        catch (Exception ex) when (ex is not OperationCanceledException and not TimeoutException) { return false; }
     }
 
     /// <summary>

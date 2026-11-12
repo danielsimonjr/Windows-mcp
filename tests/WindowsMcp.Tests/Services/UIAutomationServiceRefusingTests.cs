@@ -243,6 +243,21 @@ public sealed class UIAutomationServiceRefusingTests : IDisposable
     // ---- R23 through the service: a hung target is not probed ---------------------------------
 
     [Fact]
+    public async Task A_timeout_reading_IsEnabled_propagates_and_the_verb_never_runs()
+    {
+        // The gate's own read hit a hung provider. Treating that as "not disabled" ran the verb
+        // against the same provider and spent the UIA timeout a second time.
+        var timeout = FlaUiShaped.From(FlaUiShaped.UIA_E_TIMEOUT);
+        var fake = Arrange(() => throw timeout);
+
+        Func<Task> act = () => _svc.FocusAsync(fake.Id);
+
+        (await act.Should().ThrowAsync<TimeoutException>()).Which.Should().BeSameAs(timeout);
+        fake.Focuses.Should().Be(0, "the verb must not run against a provider that just timed out");
+        fake.ProcessIdReads.Should().Be(0, "and nothing else is read from it");
+    }
+
+    [Fact]
     public async Task A_timeout_from_the_body_is_rethrown_as_itself_without_reading_the_element_again()
     {
         var timeout = FlaUiShaped.From(FlaUiShaped.UIA_E_TIMEOUT);

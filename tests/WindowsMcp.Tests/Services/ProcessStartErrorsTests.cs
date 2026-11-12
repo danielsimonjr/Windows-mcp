@@ -172,20 +172,30 @@ public class ProcessStartErrorsIntegrationTests
     // tries 'C:\Program'. Round 2 quoted the whole command line back and said "give a full path" —
     // which the caller already did. The message names psi.FileName, and adds the remedy that works.
 
+    /// <summary>
+    /// A path with a space that exists nowhere. The random part comes BEFORE the first space:
+    /// command-only mode tries the text up to that space, and a fixed prefix such as
+    /// <c>C:\Program</c> could be a real file or folder on some machine, which this test would
+    /// then launch or open.
+    /// </summary>
     private static string SpacedMissingPath() =>
-        $@"C:\Program Files\NoSuchVendor{Guid.NewGuid():N}\app.exe";
+        $@"C:\wmcp-nosuch-{Guid.NewGuid():N} dir\app.exe";
+
+    /// <summary>What command-only mode tries: the text before the first space.</summary>
+    private static string FirstToken(string path) => path[..path.IndexOf(' ')];
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task An_unquoted_spaced_command_names_the_file_actually_tried_and_says_to_quote_it_or_use_args_json(bool shellExecute)
     {
-        var command = SpacedMissingPath() + " --flag";
+        var path = SpacedMissingPath();
+        var command = path + " --flag";
 
         Func<Task> act = () => Process().StartDetachedAsync(new ProcessStart(command, null, null, shellExecute));
 
         var ex = (await act.Should().ThrowAsync<FileNotFoundException>()).Which;
-        ex.Message.Should().Contain(@"'C:\Program'", "SplitCommand tried the text up to the first space");
+        ex.Message.Should().Contain($"'{FirstToken(path)}'", "SplitCommand tried the text up to the first space");
         ex.Message.Should().NotContain(command, "the whole command line is not what was tried");
         ex.Message.Should().ContainEquivalentOf("quote", "the fix for a spaced path in one command line");
         ex.Message.Should().Contain("args_json", "or pass the executable and its arguments separately");

@@ -115,6 +115,9 @@ internal sealed class OwnedControlsWindow : IDisposable
         {
             TranslateMessage(ref msg);
             DispatchMessageW(ref msg);
+            // WM_CLOSE destroys a STATIC window but posts no WM_QUIT, so without this the next
+            // GetMessageW blocks for ever and every fixture leaves a thread behind.
+            if (Handle != IntPtr.Zero && !IsWindow(Handle)) break;
         }
     }
 
