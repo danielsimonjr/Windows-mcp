@@ -6,19 +6,20 @@
 **Ours:** `main` @ `8cb40b6` + the phase-2/3/4/5 branches, 69 tools, plugin `0.7.3`, `CHANGELOG.md
 [Unreleased]` carries the section-A phase-1 work (A-7, A-8, A-9, A-11, A-13), phase 2's A-1,
 phase 3's A-2/A-3/A-4, phase 4's A-6 and phase 5's A-14, A-12 (phase 1), A-10 and A-5 (phase 1),
-then all of section B and all of section C (C-7, C-4, C-2, C-3, C-1, C-6, C-5), D-10/D-11, S-11
-and E-1.
+then all of section B and all of section C (C-7, C-4, C-2, C-3, C-1, C-6, C-5), D-10/D-11, S-11,
+E-1 and E-2.
 SDK `ModelContextProtocol` 2.2.0.
 **Status:** Living document — check items off as they ship.
 
-This is the working list of everything upstream can do that this server cannot (plus twenty-two
+This is the working list of everything upstream can do that this server cannot (plus twenty-seven
 defects: D-1…D-4 from the original comparison, D-5…D-9 added later under rule 4 and D-10/D-11
 logged 2026-11-10 — **all eleven are now fixed** — then D-12…D-18, logged 2026-11-11 by the
-D-10/D-11 review, and D-19…D-22, logged 2026-11-12 during E-1, all still open; section A's phase 1 — A-7, A-9, A-8, A-11 and A-13 — is done, phase 2 shipped A-1,
+D-10/D-11 review, D-19…D-22, logged 2026-11-12 during E-1, and D-23…D-27, logged 2026-11-12
+during E-2, all still open; section A's phase 1 — A-7, A-9, A-8, A-11 and A-13 — is done, phase 2 shipped A-1,
 phase 3 shipped A-2 with A-3 and A-4 inside it, phase 4 shipped A-6, and phase 5 shipped A-14,
 A-12 phase 1, A-10 and A-5 phase 1 — so every section-A row is ticked, with only A-5's Firefox
 phase left open and A-12's phase 2 deliberately not planned; section B is ticked too, and
-C-5/C-6 close section C — section S, D-12…D-22 and section E are the work that is left; section E
+C-5/C-6 close section C — section S, D-12…D-27 and section E are the work that is left; section E
 is not upstream parity but an agent-efficiency backlog from a review of this server's own tools).
 Each item carries enough context to write a design note and an implementation plan without re-reading
 upstream from scratch: what upstream does and where, what we do today and where, an
@@ -129,8 +130,13 @@ function names are the stable anchor.
 | D-20 | `find_element` stops at 20 matches and does not say it stopped | P2 | S | — | ☐ |
 | D-21 | `wait_for` spins with under 1 ms of budget left: `Task.Delay` of a sub-millisecond span returns at once | P3 | S | — | ☐ |
 | D-22 | `archive` zip/unzip silently overwrite an existing destination; no `overwrite`, no `confirm` | P2 | S | — | ☐ |
+| D-23 | `interact_element type` reports "replaced the whole value" after a ValuePattern write it never read back | P2 | S | E-2 | ☐ |
+| D-24 | `find_element kind:scrollable` counts any ScrollPattern element, even one with no axis that scrolls | P3 | S | — | ☐ |
+| D-25 | A Win32 child clipped out of its parent, or never shown, reads as on screen (`scroll_into_view`, `click` by element) | P2 | S–M | E-2 | ☐ |
+| D-26 | `MissingPattern` / `Refusing` re-probe liveness after a pattern lookup timed out on a hung provider | P3 | S | D-10 | ☐ |
+| D-27 | The pattern-not-supported, D-10-translated and `select` no-item refusals quote a name or value unclipped | P3 | S | E-2 | ☐ |
 | E-1 | Server instructions in the MCP handshake | P1 | S | — | ☑ |
-| E-2 | `interact_element`: expand, collapse, set_value, scroll_into_view | P1 | S | D-10 | ☐ |
+| E-2 | `interact_element`: expand, collapse, set_value, scroll_into_view | P1 | S | D-10 | ☑ |
 | E-3 | `click` modifiers; `key` repeat and hold | P2 | S | — | ☐ |
 | E-4 | `find_element` filters: automation id, control type, class, within, paging | P2 | M | — | ☐ |
 | E-5 | `observe`: action tools return the state they produced | P1 | M | D-11 | ☐ |
@@ -142,7 +148,8 @@ function names are the stable anchor.
 | E-11 | Stable element ids and a snapshot diff | P3 | L | E-5, D-11 | ☐ |
 
 **Suggested order.** **Defects D-1 … D-11 are done** (D-12 … D-18, logged 2026-11-11 by the
-D-10/D-11 review, and D-19 … D-22, logged 2026-11-12 during E-1, are open), and **so are sections
+D-10/D-11 review, D-19 … D-22, logged 2026-11-12 during E-1, and D-23 … D-27, logged 2026-11-12
+during E-2, are open), and **so are sections
 A, B and C** (A-5's Firefox phase and
 D-2's `interact_element(type) clear` are the open sub-items; A-12's phase 2 is not planned). What
 is left of the parity work is section S: S-11 (the control indicator) is done (PR #32); the quick wins S-8 and S-1 can be interleaved anywhere; S-4 last.
@@ -156,9 +163,9 @@ opt-in sampling and the annotation table, per-item test seeds) is in
 
 **Section E (added 2026-11-10) is not upstream parity.** It comes from a review of this server's
 own tool surface for how many round trips and tokens an AI client spends driving it, and the same
-review logged D-10 and D-11 (both done 2026-11-11, so E-2 and E-5 are unblocked). E-1 is done
-(2026-11-12). Order for the rest:
-E-2, E-3, E-4, E-5, E-6, E-7, E-8, E-9, E-10. E-11 is last and conditional: measure the snapshot
+review logged D-10 and D-11 (both done 2026-11-11, so E-2 and E-5 are unblocked). E-1 and E-2
+are done (2026-11-12). Order for the rest:
+E-3, E-4, E-5, E-6, E-7, E-8, E-9, E-10. E-11 is last and conditional: measure the snapshot
 cost after E-5 before committing to it. `todo.md` still records every UI-automation tool as never
 verified live — that sweep outranks any E item that builds on those tools.
 
@@ -800,6 +807,137 @@ target unchanged; both succeed with `overwrite:true`; unzip into an empty direct
 a zip-slip entry is still refused.
 
 **Done when.** No `archive` call replaces an existing file the caller did not opt into replacing.
+
+### D-23 — `interact_element type` claims a ValuePattern write it never read back  `P2 · S`
+- [ ] Not started
+
+**Found while landing E-2 (2026-11-12), read from the source.**
+
+**Ours today.** `UIAutomationService.InteractOnSta`'s `type` branch focuses the element and, when
+it has a writable `ValuePattern`, calls `SetValue(value)` and returns `Method:"ValuePattern"`,
+`Detail:"replaced the whole value"` without reading the value back. E-2 found that providers
+accept a `SetValue` they then ignore — a WinForms slider, a drop-down list given a text that is not
+one of its items — and made `set_value` verify (`SetTextValue`: read before and after, refuse a
+write that changed nothing, `now '<shown>'`). `type` still reports the same false success on those
+controls.
+
+**Sketch.** Route `type`'s ValuePattern branch through the same verification as `set_value`
+(`SetTextValue`, never reading a password field), keeping `type`'s focus call and keyboard
+fallback for a control with no writable ValuePattern. Decide whether an ignored write should fall
+back to the keyboard or be refused; the second matches `set_value`.
+
+**Touches.** `Services/UIAutomationService.cs` (`InteractOnSta`, `type`),
+`Tools/UIAutomationTools.cs` (the description's `type` clause),
+`tests/.../Services/UIAutomationServiceInteractVerbsTests.cs`.
+
+**Tests.** `type` on a fake whose ValuePattern ignores the write is not reported as
+`replaced the whole value`; a write that took reports what the control shows; a password field is
+never read or echoed.
+
+**Done when.** `type` never reports a ValuePattern write the control did not take.
+
+### D-24 — `find_element kind:scrollable` lists controls with nothing to scroll  `P3 · S`
+- [ ] Not started
+
+**Found while landing E-2 (2026-11-12), read from the source.**
+
+**Ours today.** `UIAutomationService.TryIsScrollable` — the `kind:scrollable` filter in the find
+path — is `el.Patterns.Scroll.IsSupported`. WPF lists offer `ScrollPattern` with neither axis
+scrollable, so they match. The snapshot's rule (`UiClassifier.IsScrollable`) and E-2's
+`scroll_into_view` ancestor walk (`CanScroll`) both require the pattern **and**
+`VerticallyScrollable || HorizontallyScrollable`. E-2's refusal sends the caller to
+`find_element kind:scrollable` when no scrollable ancestor is found, so the two disagree on what
+"scrollable" means.
+
+**Sketch.** Make `TryIsScrollable` read the two axis properties too (one rule, as D-6 did for the
+interactive set — ideally one shared predicate).
+
+**Touches.** `Services/UIAutomationService.cs` (`TryIsScrollable`),
+`tests/.../Services/UIAutomationServiceTests.cs`.
+
+**Tests.** A fake with `ScrollPattern` and no scrollable axis is not a `kind:scrollable` match; one
+with either axis scrollable is.
+
+**Done when.** `find_element kind:scrollable` and the snapshot's scrollable list agree.
+
+### D-25 — A Win32 child clipped out of its parent, or never shown, reads as on screen  `P2 · S–M`
+- [ ] Not started
+
+**Found while writing E-2's real-control tests (2026-11-12), observed:** a button clipped far below
+its parent's client area, and one created without `WS_VISIBLE`, each report
+`IsOffscreen=false` with real bounds through UIA's Win32 proxy (recorded in
+`tests/.../Fixtures/OwnedPatternControlsWindow.cs`).
+
+**Ours today.** `scroll_into_view` on an element with no `ScrollItemPattern` treats "not offscreen
+and bounds with area" (`UIAutomationService.OnScreenCentre`) as on screen and answers
+`already on screen, centre (x,y)` with nothing done. `ElementTarget.CentreOf` uses the same two
+facts, so `click` / `type` / `scroll` / `drag` / `multi_select` / `multi_edit` by element accept such
+a control and act at a point that is not on it. D-7's `IsVisibleEnough` (find / wait_for) has the
+same blind spot.
+
+**Sketch.** For an element with a native window handle, also require `IsWindowVisible` and that its
+bounds intersect its parent's client rectangle (or at least a monitor); otherwise treat it as
+offscreen. Measure the per-element cost before applying it in the find path.
+
+**Touches.** `Services/UIAutomationService.cs` (`OnScreenCentre`, `IsVisibleEnough`),
+`Services/UiTree/ElementTarget.cs`, `tests/.../Fixtures/OwnedPatternControlsWindow.cs`,
+`tests/.../Services/UIAutomationServiceInteractVerbsIntegrationTests.cs`.
+
+**Tests.** On real Win32 controls: a child clipped out of its parent and a child without
+`WS_VISIBLE` are each refused by `scroll_into_view` (no "already on screen") and by `click` by
+element; a visible child inside the client area still succeeds.
+
+**Done when.** No element-targeted call reports or acts on a point the control does not occupy.
+
+### D-26 — Refusals re-probe a hung provider after a pattern lookup  `P3 · S`
+- [ ] Not started
+
+**Found by the E-2 review (2026-11-12), read from the source; pre-existing since D-10 (R23).**
+
+**Ours today.** R23 says a hung target must not be read again: `Refusing` rethrows a
+`TimeoutException` untouched. But a refusal raised *by the verb* is an `InvalidOperationException`,
+which passes `UiRefusals.NeedsProbe`, so `Refusing`'s filter calls `IsGone(el)` again before
+`Translate` hands it back unchanged — after `MissingPattern` already probed liveness with its own
+`IsGone`. A pattern lookup that came back empty from a slow or hung provider is therefore followed
+by two liveness reads, each of which can cost the UIA timeout on the one STA thread every element
+tool shares. `scroll_into_view` without the pattern reads `IsGone` twice more (before
+`OnScreenCentre` and in `NoScrollItem`).
+
+**Sketch.** Skip the filter's probe for an exception that is already caller-facing (check
+`ToolErrors.IsCallerFacing` before `IsGone`), and probe at most once per call.
+
+**Touches.** `Services/UIAutomationService.cs` (`Refusing`, `MissingPattern`, `NoScrollItem`),
+`tests/.../Services/UIAutomationServiceRefusingTests.cs`.
+
+**Tests.** A fake whose pattern lookup returns null and whose `ProcessId` read is counted: a
+missing-pattern refusal reads it once; a caller-facing refusal from the verb is not re-probed by
+`Refusing`.
+
+**Done when.** One refusal costs at most one liveness read.
+
+### D-27 — Some UI refusals still quote a name or value in full  `P3 · S`
+- [ ] Not started
+
+**Found while documenting E-2 (2026-11-12), read from the source.**
+
+**Ours today.** E-2 added `UiRefusals.Clip` (80 characters, then `...`) and applied it in
+`UIAutomationService.Describe`, `ElementTarget.CentreOf` and the values `set_value` echoes, so a
+row whose name is its whole text cannot push the remedy past the 2 000-character cap on error
+messages. The other refusals still take the raw name: `UiRefusals.PatternNotSupported`
+(`"<Pattern> not supported on <type> '<name>'."`, the most common `interact_element` refusal),
+`UiRefusals.Translate` (disabled / does-not-support), `UiRefusals.ChildGone`, and `select`'s
+`No item named '<value>' under …`, which echoes the caller's value unclipped.
+
+**Sketch.** Clip the name inside those factories (one place) and the `select` value at its call
+site.
+
+**Touches.** `Services/UiTree/UiRefusals.cs`, `Services/UIAutomationService.cs` (`select`),
+`tests/.../Services/UiTree/UiRefusalsTests.cs`.
+
+**Tests.** Each factory with a 200-character name quotes 80 plus `...` and keeps its trailing
+remedy; `select` with a 200-character value likewise.
+
+**Done when.** No UI refusal quotes more than 80 characters of a name or a caller's value.
 
 ---
 
@@ -1691,7 +1829,7 @@ Neighbour gaps found while pinning the text are D-19 … D-22; the same review c
 tool was gated.
 
 ### E-2 — `interact_element`: expand, collapse, set_value, scroll_into_view  `P1 · S`
-- [ ] Not started
+- [x] Done 2026-11-12 — in `CHANGELOG.md [Unreleased]`, ships with the next release
 
 **Ours today.** Six verbs: click, invoke, toggle, select, focus, type. The snapshot already reads
 `Expand`, `RangeValue`, `RangeMin` and `RangeMax` for every element and prints a `slide` action
@@ -1714,6 +1852,38 @@ range and with a non-numeric value on a range control; the `Method`/`Detail` str
 
 **Done when.** A tree node expands, a slider moves to a number, and an off-screen list row comes
 into view, each in one call with no pointer movement.
+
+**As landed:** ten verbs; the four new ones live in `UIAutomationService.InteractOnSta` with
+helpers `SetRangeValue`, `SetTextValue`, `SetOrRejected`, `NoScrollItem` and
+`NearestScrollableAncestor`. `expand` / `collapse` read `ExpandCollapseState` first — already in
+the asked state is a success (`already Expanded`) and is not flipped, a leaf is refused — and
+report the state re-read (`now Expanded`). `set_value` prefers `RangeValuePattern`: read-only is
+refused before the value is parsed; the value must be a finite invariant-format number inside the
+provider's bounds (a NaN or inverted bound is treated as unknown); `Detail` is the value re-read,
+`now 30 (range 0 to 100)`. The bounds are the provider's: the Win32 trackbar proxy reports 0-100
+**percent of the trackbar's own range** (a 5..50 trackbar reads 0..100), which the description now
+states. Without a range it writes a writable `ValuePattern` and **verifies** it — read before and
+after, `now '<shown>'`, and a write that was accepted but changed nothing is refused (a WinForms
+slider, a drop-down list given a non-item); a password field is never read or echoed and an
+unreadable control yields `replaced the whole value`. A provider rejection (`ArgumentException`,
+`Win32Exception`) becomes a refusal naming the control. No focus call and no typing fallback — but
+the window can still move to the front: UIA's Win32 proxies activate the control's
+window on `ValuePattern.SetValue` (EDIT), `RangeValuePattern.SetValue` (trackbar) and `Expand`
+(TreeView), so the description says a provider may bring the window forward. `scroll_into_view`
+uses `ScrollItemPattern` (`now on screen, centre (x,y)` or `the control still reports offscreen`)
+and is the one verb allowed on a disabled control; without the pattern an element already on
+screen succeeds with `Method` `None`, otherwise the refusal names the nearest ancestor with
+`ScrollPattern` **and** a scrollable axis (up to 25 levels up the control view) by a freshly issued
+`el_N` for `scroll`, and a timeout in that walk propagates (R23). `""` is "no value" for
+`expand`/`collapse`/`scroll_into_view`. Beyond the sketch: `ElementTarget.CentreOf`'s off-screen
+refusal (`click`/`type`/`scroll`/`drag`/`multi_select`/`multi_edit` by element) now leads with
+`interact_element scroll_into_view`, and names in those refusals and in `Describe` are clipped to 80
+characters (`UiRefusals.Clip`). Tests: `UIAutomationServiceInteractVerbsTests` (Unit, fakes),
+`UIAutomationServiceInteractVerbsIntegrationTests` and
+`UIAutomationServiceInteractVerbsRealPatternTests` (Integration, on real Win32 controls in
+`Fixtures/OwnedPatternControlsWindow.cs` with a strict input mock — the "no pointer movement" bar),
+plus rows in `UIAutomationServiceRefusingTests`, `UIAutomationToolsTests`, `ElementTargetTests` and
+`InputToolsClickTests`. Neighbour gaps found and not fixed are D-23 … D-27.
 
 ### E-3 — `click` modifiers; `key` repeat and hold  `P2 · S`
 - [ ] Not started

@@ -132,6 +132,9 @@ public sealed class UIAutomationServiceRefusingTests : IDisposable
     {
         "interact_click", "interact_invoke", "interact_toggle", "interact_select", "interact_select_item",
         "interact_focus", "interact_type", "focus",
+        // E-2: the new verbs that act on the control. scroll_into_view does not (acts: false) and is
+        // pinned the other way round in UIAutomationServiceInteractVerbsTests.
+        "interact_expand", "interact_collapse", "interact_set_value",
     };
 
     private static string ActionOf(string path) => path switch
@@ -150,6 +153,9 @@ public sealed class UIAutomationServiceRefusingTests : IDisposable
         "interact_select_item" => _svc.InteractAsync(id, "select", "Apple"),
         "interact_focus" => _svc.InteractAsync(id, "focus", null),
         "interact_type" => _svc.InteractAsync(id, "type", "wmcp"),
+        "interact_expand" => _svc.InteractAsync(id, "expand", null),
+        "interact_collapse" => _svc.InteractAsync(id, "collapse", null),
+        "interact_set_value" => _svc.InteractAsync(id, "set_value", "5"),
         "focus" => _svc.FocusAsync(id),
         _ => throw new ArgumentOutOfRangeException(nameof(path), path, "no such path"),
     };

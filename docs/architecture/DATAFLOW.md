@@ -912,8 +912,8 @@ find_element / snapshot / get_state walks
 Element-targeted calls (get_text, get_table, interact_element; FocusAsync) — D-10 / D-11
   ResolveCached(id) misses  → KeyNotFoundException: "Element 'el_N' has expired: … take a new
                               snapshot" (issued, since dropped) | "Unknown element id …"
-  acting verb (interact_element, FocusAsync) on a control that reports disabled
-                            → InvalidOperationException before any pattern call or focus
+  acting verb (interact_element except scroll_into_view, FocusAsync) on a control that
+  reports disabled          → InvalidOperationException before any pattern call or focus
   the target throws         → Refusing():
     timeout / cancellation / ArgumentException → rethrown as-is (no further read of a hung target)
     else liveness probe (one ProcessId read, UiRefusals.ProbeSaysGone)

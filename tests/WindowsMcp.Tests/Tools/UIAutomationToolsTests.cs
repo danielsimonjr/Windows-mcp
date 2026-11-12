@@ -607,4 +607,129 @@ public class UIAutomationToolsTests
         description.Should().NotContainEquivalentOf("not implemented");
         description.Should().NotContainEquivalentOf("reserved");
     }
+
+    // ---- E-2: interact_element's expand, collapse, set_value, scroll_into_view ------------------
+
+    private static readonly string[] InteractVerbs =
+        ["click", "invoke", "toggle", "select", "focus", "type", "expand", "collapse", "set_value", "scroll_into_view"];
+
+    private static string InteractDescription() => typeof(UIAutomationTools)
+        .GetMethod(nameof(UIAutomationTools.InteractElement))!
+        .GetCustomAttribute<DescriptionAttribute>()!.Description;
+
+    private static string InteractParameterDescription(string name) => typeof(UIAutomationTools)
+        .GetMethod(nameof(UIAutomationTools.InteractElement))!
+        .GetParameters().Single(p => p.Name == name)
+        .GetCustomAttribute<DescriptionAttribute>()!.Description;
+
+    [Fact]
+    public void InteractElement_action_parameter_advertises_the_ten_verbs_in_order()
+    {
+        InteractParameterDescription("action")
+            .Split('|', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Should().Equal(InteractVerbs);
+    }
+
+    [Fact]
+    public void InteractElement_description_names_every_verb()
+    {
+        var description = InteractDescription();
+
+        foreach (var verb in InteractVerbs)
+            description.Should().Contain(verb);
+    }
+
+    [Fact]
+    public void InteractElement_value_parameter_description_says_set_value_takes_a_number_or_text()
+    {
+        var description = InteractParameterDescription("value");
+
+        description.Should().Contain("set_value");
+        description.Should().ContainEquivalentOf("number", "a range control (slider) takes a number");
+        description.Should().ContainEquivalentOf("text", "a ValuePattern control takes the text");
+    }
+
+    [Fact]
+    public void InteractElement_description_says_what_the_new_refusals_tell_the_caller()
+    {
+        var description = InteractDescription();
+
+        description.Should().ContainEquivalentOf("minimum").And.ContainEquivalentOf("maximum",
+            "set_value's out-of-range refusal names the range");
+        description.Should().ContainEquivalentOf("scrollable",
+            "scroll_into_view's refusal points at the scrollable container to scroll instead");
+    }
+
+    // ---- E-2 round 2 (I, J): the description says what the real providers do ------------------
+
+    [Fact]
+    public void InteractElement_description_no_longer_promises_no_focus_change()
+    {
+        // I: UIA's Win32 providers activate the control's window on ValuePattern/RangeValuePattern
+        // SetValue (UIAutomationServiceInteractVerbsRealPatternTests' class note), so the promise is false.
+        InteractDescription().Should().NotContainEquivalentOf("no focus change");
+    }
+
+    [Fact]
+    public void InteractElement_description_says_set_value_makes_no_focus_call_has_no_typing_fallback_and_a_provider_may_bring_the_window_forward()
+    {
+        var description = InteractDescription();
+
+        description.Should().ContainEquivalentOf("no focus call");
+        description.Should().ContainEquivalentOf("no typing fallback");
+        description.Should().MatchRegex("(?i)provider[^.;]*(window[^.;]*(forward|to the foreground|to the front))",
+            "a provider may bring the control's window forward");
+    }
+
+    [Fact]
+    public void InteractElement_description_says_set_value_reports_the_value_shown_and_refuses_when_it_did_not_change()
+    {
+        var description = InteractDescription();
+
+        description.Should().MatchRegex("(?i)set_value[^)]*(did not change|does not change|didn't change|unchanged)",
+            "J: set_value refuses when the control's value did not change");
+        description.Should().MatchRegex("(?i)set_value[^)]*(shows|reads back|value afterwards|value after)",
+            "J: set_value reports the value the control shows afterwards");
+    }
+
+    [Fact]
+    public void InteractElement_description_says_the_range_in_a_refusal_is_the_providers_and_a_Win32_trackbar_reports_percent()
+    {
+        var description = InteractDescription();
+
+        description.Should().MatchRegex("(?i)provider'?s", "J: the minimum and maximum named are the provider's");
+        description.Should().MatchRegex("(?i)trackbar[^.;)]*(0-100|0 to 100|0–100)[^.;)]*percent|percent[^.;)]*trackbar",
+            "J: a Win32 trackbar reports 0-100 percent");
+    }
+
+    [Fact]
+    public void InteractElement_description_says_scroll_into_view_on_an_element_already_on_screen_succeeds()
+    {
+        InteractDescription().Should().ContainEquivalentOf("already on screen");
+    }
+
+    [Theory]
+    [InlineData("expand", null, "ExpandCollapsePattern", "now Expanded")]
+    [InlineData("set_value", "40", "RangeValuePattern", "now 40 (range 0 to 100)")]
+    [InlineData("scroll_into_view", null, "ScrollItemPattern", null)]
+    public async Task InteractElement_forwards_a_new_verb_and_returns_the_unchanged_result_shape(
+        string action, string? value, string method, string? detail)
+    {
+        // Regression guard (green before E-2): the tool is a pass-through, and the JSON keeps the
+        // {ElementId, Action, Method, Detail} shape for the new verbs.
+        var mock = new Mock<IUIAutomationService>();
+        mock.Setup(s => s.InteractAsync("el_3", action, value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new InteractResult("el_3", action, method, detail));
+
+        var json = await new UIAutomationTools(mock.Object).InteractElement("el_3", action, value);
+
+        mock.Verify(s => s.InteractAsync("el_3", action, value, It.IsAny<CancellationToken>()), Times.Once);
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        root.EnumerateObject().Select(p => p.Name).Should().Equal("ElementId", "Action", "Method", "Detail");
+        root.GetProperty("ElementId").GetString().Should().Be("el_3");
+        root.GetProperty("Action").GetString().Should().Be(action);
+        root.GetProperty("Method").GetString().Should().Be(method);
+        root.GetProperty("Detail").GetString().Should().Be(detail);
+    }
 }

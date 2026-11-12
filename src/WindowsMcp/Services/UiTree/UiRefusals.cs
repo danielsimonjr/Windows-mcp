@@ -14,6 +14,21 @@ internal static class UiRefusals
     private const int UIA_E_ELEMENTNOTENABLED = unchecked((int)0x80040200);
     private const int UIA_E_NOTSUPPORTED = unchecked((int)0x80040204);
 
+    /// <summary>How much of a control's name, or of a value the caller sent, a refusal quotes.</summary>
+    internal const int MaxQuoted = 80;
+
+    /// <summary>
+    /// A UI-supplied or caller-supplied string as a refusal quotes it: at most
+    /// <see cref="MaxQuoted"/> characters, then "...". Error messages are capped at 2 000
+    /// characters, and what to do next comes after the name.
+    /// </summary>
+    internal static string Clip(string text)
+    {
+        if (text.Length <= MaxQuoted) return text;
+        int cut = char.IsHighSurrogate(text[MaxQuoted - 1]) ? MaxQuoted - 1 : MaxQuoted;
+        return text[..cut] + "...";
+    }
+
     /// <summary>
     /// The element does not support <paramref name="pattern"/>. An
     /// <see cref="InvalidOperationException"/> because it is a deliberate refusal the caller must

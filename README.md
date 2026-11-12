@@ -238,7 +238,8 @@ gated by `confirm` (`Hosting/ServerInstructions.cs`, under 2 000 characters).
 `click`, `type`, `scroll` and `drag` take a target the same way: `x` and `y` in virtual-desktop
 pixels, or an `el_N` `element_id` from `snapshot`/`find_element` whose centre they aim at (an
 off-screen element, or one with no bounds, is refused with the reason instead of clicking a
-meaningless point). Giving both, or half a coordinate pair, is an error. `scroll` with no target
+meaningless point — bring an off-screen one into view with `interact_element`
+`scroll_into_view`). Giving both, or half a coordinate pair, is an error. `scroll` with no target
 scrolls under the current cursor and `drag`'s origin defaults to it; each response says which of
 `point`/`element`/`cursor` was used and where. `click(clicks: 0)` hovers, `scroll(shift_wheel:
 true)` holds Shift and uses the vertical wheel for `left`/`right`, and `drag(duration_ms, steps)`
